@@ -21,7 +21,6 @@ jobs:
     - name: Clone Teapot repository
       shell: powershell
       run: |
-        cd ..
         git clone https://github.com/GreenteaOS/Teapot.git
     
     - name: Download and setup HEXA

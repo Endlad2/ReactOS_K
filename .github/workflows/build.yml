@@ -21,7 +21,7 @@ jobs:
     - name: Clone Teapot repository
       shell: powershell
       run: |
-        git clone https://github.com/GreenteaOS/Teapot.git
+        git clone https://github.com/GreenteaOS/Teapot.git KOSMOS-school\
     
     - name: Download and setup HEXA
       shell: powershell

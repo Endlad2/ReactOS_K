@@ -30,22 +30,29 @@ jobs:
         # Создаем директорию
         New-Item -ItemType Directory -Force -Path C:\HEXA
         
-        # Скачиваем архив (используем Punycode версию домена)
-        Write-Host "Downloading HEXA.zip..."
-        $url = "https://xn--80adgdaemc6b.xn--p1ai/HEXA.zip"
-        Invoke-WebRequest -Uri $url -OutFile "C:\HEXA\HEXA.zip" -UserAgent "Mozilla/5.0"
+        # Скачиваем HEXA.zip из репозитория
+        Write-Host "Downloading HEXA.zip from GitHub..."
+        $url = "https://raw.githubusercontent.com/Endlad2/KOSMOS-school/refs/heads/main/.github/HEXA.zip"
+        $output = "C:\HEXA\HEXA.zip"
+        
+        Invoke-WebRequest -Uri $url -OutFile $output -UserAgent "Mozilla/5.0"
         
         # Проверяем, что файл скачался
-        if (Test-Path "C:\HEXA\HEXA.zip") {
-            Write-Host "HEXA.zip downloaded successfully"
+        if (Test-Path $output) {
+            $fileSize = (Get-Item $output).Length
+            Write-Host "HEXA.zip downloaded successfully. Size: $fileSize bytes"
             
             # Распаковываем
             Write-Host "Extracting HEXA.zip..."
-            Expand-Archive -Path "C:\HEXA\HEXA.zip" -DestinationPath "C:\HEXA" -Force
+            Expand-Archive -Path $output -DestinationPath "C:\HEXA" -Force
             
             # Удаляем архив
-            Remove-Item "C:\HEXA\HEXA.zip" -Force
+            Remove-Item $output -Force
             Write-Host "Extraction complete"
+            
+            # Показываем содержимое
+            Write-Host "Contents of C:\HEXA:"
+            Get-ChildItem C:\HEXA
         } else {
             Write-Host "Failed to download HEXA.zip"
             exit 1
@@ -63,7 +70,8 @@ jobs:
         Invoke-WebRequest -Uri $nodeUrl -OutFile "C:\HEXA\node.exe" -UserAgent "Mozilla/5.0"
         
         if (Test-Path "C:\HEXA\node.exe") {
-            Write-Host "node.exe downloaded successfully"
+            $fileSize = (Get-Item "C:\HEXA\node.exe").Length
+            Write-Host "node.exe downloaded successfully. Size: $fileSize bytes"
         } else {
             Write-Host "Failed to download node.exe"
             exit 1
@@ -73,19 +81,21 @@ jobs:
       shell: powershell
       run: |
         Write-Host "=== Checking PATH ==="
-        $env:Path -split ';'
+        $env:Path -split ';' | Where-Object { $_ -like "*HEXA*" }
         
         Write-Host "`n=== Checking HEXA directory contents ==="
         Get-ChildItem C:\HEXA
         
-        Write-Host "`n=== Checking node ==="
+        Write-Host "`n=== Checking node version ==="
         if (Test-Path "C:\HEXA\node.exe") {
-            Write-Host "node.exe found at C:\HEXA\node.exe"
             & "C:\HEXA\node.exe" --version
         } else {
             Write-Host "node.exe not found!"
             exit 1
         }
+        
+        Write-Host "`n=== Checking if C:\HEXA is in PATH ==="
+        $env:Path | Select-String "HEXA"
     
     - name: Run build script
       shell: powershell
@@ -93,6 +103,11 @@ jobs:
       run: |
         Write-Host "Running build.js..."
         & "C:\HEXA\node.exe" build.js
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "Build failed with exit code $LASTEXITCODE"
+            exit $LASTEXITCODE
+        }
+        Write-Host "Build completed successfully!"
     
     - name: Upload build artifacts
       if: success()
@@ -101,3 +116,4 @@ jobs:
         name: build-output
         path: KOSMOS-school/dist/
         retention-days: 7
+        if-no-files-found: warn

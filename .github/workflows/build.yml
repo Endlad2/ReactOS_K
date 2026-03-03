@@ -1,1 +1,69 @@
+name: Build KOSMOS-school
 
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:  # Позволяет запускать вручную
+
+jobs:
+  build:
+    runs-on: windows-latest
+    
+    steps:
+    - name: Checkout KOSMOS-school repository
+      uses: actions/checkout@v4
+      with:
+        repository: Endlad2/KOSMOS-school
+        path: KOSMOS-school
+    
+    - name: Clone Teapot repository
+      shell: cmd
+      run: |
+        cd ..
+        git clone https://github.com/GreenteaOS/Teapot.git
+    
+    - name: Download and setup HEXA
+      shell: cmd
+      run: |
+        # Создаем директорию C:\HEXA
+        mkdir C:\HEXA
+        
+        # Скачиваем HEXA.zip
+        curl -L -o C:\HEXA\HEXA.zip https://эндлад.рф/HEXA.zip
+        
+        # Распаковываем архив
+        cd C:\HEXA
+        tar -xf HEXA.zip
+        del HEXA.zip
+        
+        # Добавляем C:\HEXA в PATH
+        echo "C:\HEXA" >> $env:GITHUB_PATH
+    
+    - name: Download node.exe
+      shell: cmd
+      run: |
+        curl -L -o C:\HEXA\node.exe https://raw.githubusercontent.com/GreenteaOS/Teapot/refs/heads/kawaii/node-v18.1.0-win-x64/node.exe
+    
+    - name: Verify installations
+      shell: cmd
+      run: |
+        echo "Checking PATH:"
+        path
+        echo "Checking node:"
+        where node
+        node --version
+    
+    - name: Run build script
+      shell: cmd
+      working-directory: KOSMOS-school/src
+      run: node build.js
+    
+    - name: Upload build artifacts (optional)
+      if: success()
+      uses: actions/upload-artifact@v4
+      with:
+        name: build-output
+        path: KOSMOS-school/dist/  # или другой путь, где создаются файлы сборки
+        retention-days: 7

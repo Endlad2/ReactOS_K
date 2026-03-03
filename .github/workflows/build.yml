@@ -77,6 +77,12 @@ jobs:
             exit 1
         }
     
+    - name: Create output directory
+      shell: powershell
+      run: |
+        # Создаем директорию для выходного файла, если её нет
+        New-Item -ItemType Directory -Force -Path C:\BKosmos
+    
     - name: Verify installations
       shell: powershell
       run: |
@@ -96,6 +102,9 @@ jobs:
         
         Write-Host "`n=== Checking if C:\HEXA is in PATH ==="
         $env:Path | Select-String "HEXA"
+        
+        Write-Host "`n=== Checking output directory ==="
+        Get-ChildItem C:\BKosmos
     
     - name: Run build script
       shell: powershell
@@ -109,11 +118,55 @@ jobs:
         }
         Write-Host "Build completed successfully!"
     
+    - name: Check for ISO file
+      shell: powershell
+      run: |
+        Write-Host "=== Looking for kosmos.iso ==="
+        
+        # Проверяем в разных возможных местах
+        $possiblePaths = @(
+            "C:\BKosmos\kosmos.iso",
+            "KOSMOS-school\kosmos.iso",
+            "KOSMOS-school\dist\kosmos.iso",
+            "KOSMOS-school\src\kosmos.iso"
+        )
+        
+        $found = $false
+        foreach ($path in $possiblePaths) {
+            if (Test-Path $path) {
+                Write-Host "✓ Found kosmos.iso at: $path"
+                Write-Host "File size: $((Get-Item $path).Length) bytes"
+                
+                # Копируем в C:\BKosmos если там его нет
+                if ($path -ne "C:\BKosmos\kosmos.iso") {
+                    Write-Host "Copying to C:\BKosmos\kosmos.iso..."
+                    Copy-Item -Path $path -Destination "C:\BKosmos\kosmos.iso" -Force
+                }
+                $found = $true
+                break
+            }
+        }
+        
+        if (-not $found) {
+            Write-Host "✗ kosmos.iso not found in any expected location!"
+            Write-Host "Searching entire workspace for .iso files:"
+            Get-ChildItem -Path . -Filter *.iso -Recurse -ErrorAction SilentlyContinue
+            exit 1
+        }
+        
+        # Финальная проверка
+        if (Test-Path "C:\BKosmos\kosmos.iso") {
+            Write-Host "✓ kosmos.iso is ready at C:\BKosmos\kosmos.iso"
+        } else {
+            Write-Host "✗ Failed to prepare kosmos.iso for upload"
+            exit 1
+        }
+    
     - name: Upload build artifacts
       if: success()
       uses: actions/upload-artifact@v4
       with:
-        name: build-output
-        path: KOSMOS-school/dist/
+        name: kosmos-iso
+        path: C:\BKosmos\kosmos.iso
         retention-days: 7
-        if-no-files-found: warn
+        if-no-files-found: error

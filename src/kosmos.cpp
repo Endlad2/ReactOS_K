@@ -1366,7 +1366,7 @@ String_* String_161; static const wchar_t *String_161_ = L"<> ShowWindow.window 
 String_* String_162; static const wchar_t *String_162_ = L"<> TofitaSyscalls.PeekMessage == not probeForWriteOkay\n";
 String_* String_163; static const wchar_t *String_163_ = L"<> TofitaSyscalls.SetTimer == not probeForReadOkay\n";
 String_* String_164; static const wchar_t *String_164_ = L"<> TofitaSyscalls.KillTimer == not probeForReadOkay\n";
-String_* String_165; static const wchar_t *String_165_ = L"<Tofita> ERROR: %S\n";
+String_* String_165; static const wchar_t *String_165_ = L"<KOSMOS> ERROR: %S\n";
 String_* String_166; static const wchar_t *String_166_ = L"ascii.bin";
 String_* String_167; static const wchar_t *String_167_ = L"root/Windows/Fonts/ascii.png";
 String_* String_168; static const wchar_t *String_168_ = L"...";
@@ -1393,7 +1393,7 @@ String_* String_188; static const wchar_t *String_188_ = L"Command completed. Yo
 String_* String_189; static const wchar_t *String_189_ = L"serial";
 String_* String_190; static const wchar_t *String_190_ = L"Command completed. Serial log disabled: %u\n";
 String_* String_191; static const wchar_t *String_191_ = L"wallpaper";
-String_* String_192; static const wchar_t *String_192_ = L"root/Windows/Web/Wallpaper/Tofita/nostalgia.jpg";
+String_* String_192; static const wchar_t *String_192_ = L"root/Windows/Web/Wallpaper/ReactOS/fisherman.jpg";
 String_* String_193; static const wchar_t *String_193_ = L"Color palette format unsupported for the provided image file.\n";
 String_* String_194; static const wchar_t *String_194_ = L"help";
 String_* String_195; static const wchar_t *String_195_ = L"Hit `~` to show/hide this console at any time. At least those commands available:\n";
@@ -1479,8 +1479,8 @@ String_* String_274; static const wchar_t *String_274_ = L"Peek desktop";
 String_* String_275; static const wchar_t *String_275_ = L"Clock";
 String_* String_276; static const wchar_t *String_276_ = L"Keyboard";
 String_* String_277; static const wchar_t *String_277_ = L"Search";
-String_* String_278; static const wchar_t *String_278_ = L"<Tofita> loadStbi32FromBuffer before allocateBitmap";
-String_* String_279; static const wchar_t *String_279_ = L"<Tofita> loadStbi32FromBuffer before rgba";
+String_* String_278; static const wchar_t *String_278_ = L"<KOSMOS> loadStbi32FromBuffer before allocateBitmap";
+String_* String_279; static const wchar_t *String_279_ = L"<KOSMOS> loadStbi32FromBuffer before rgba";
 String_* String_280; static const wchar_t *String_280_ = L"%d images in a icon\n";
 String_* String_281; static const wchar_t *String_281_ = L"%d image is %dx%d, palette = %d\n";
 String_* String_282; static const wchar_t *String_282_ = L"The best image is %dx%d, palette = %d, id %d\n";
@@ -1515,13 +1515,13 @@ String_* String_310; static const wchar_t *String_310_ = L"[GDT] #%u TSS ";
 String_* String_311; static const wchar_t *String_311_ = L"[GDT] #%u TSS (part two)\n";
 String_* String_312; static const wchar_t *String_312_ = L"[GDT] #%u Not present\n";
 String_* String_313; static const wchar_t *String_313_ = L"[GDT] #%u ";
-String_* String_314; static const wchar_t *String_314_ = L"<Tofita> enable NX bit";
-String_* String_315; static const wchar_t *String_315_ = L"<Tofita> NX bit unsupported";
+String_* String_314; static const wchar_t *String_314_ = L"<KOSMOS> enable NX bit";
+String_* String_315; static const wchar_t *String_315_ = L"<KOSMOS> NX bit unsupported";
 String_* String_316; static const wchar_t *String_316_ = L"[mouse] begin: setting PS/2 mouse";
 String_* String_317; static const wchar_t *String_317_ = L"[mouse] done: setting PS/2 mouse";
 String_* String_318; static const wchar_t *String_318_ = L"\r";
-String_* String_319; static const wchar_t *String_319_ = L"<Tofita> [looping forever]";
-String_* String_320; static const wchar_t *String_320_ = L"\n\n<Tofita> Non-SEH exception with IP at %8\n";
+String_* String_319; static const wchar_t *String_319_ = L"<KOSMOS> [looping forever]";
+String_* String_320; static const wchar_t *String_320_ = L"\n\n<KOSMOS> Non-SEH exception with IP at %8\n";
 String_* String_321; static const wchar_t *String_321_ = L"Current context: THREAD_GUI\n";
 String_* String_322; static const wchar_t *String_322_ = L"Current context: THREAD_ENGINE\n";
 String_* String_323; static const wchar_t *String_323_ = L"Event: #PF [Page Fault]\n";
@@ -1534,12 +1534,12 @@ String_* String_329; static const wchar_t *String_329_ = L"\n[Exception before m
 String_* String_330; static const wchar_t *String_330_ = L"[AMD64] PAT supported\n";
 String_* String_331; static const wchar_t *String_331_ = L"[AMD64] PAT initialized\n";
 String_* String_332; static const wchar_t *String_332_ = L"[AMD64] PAT is not supported\n";
-String_* String_333; static const wchar_t *String_333_ = L"<Tofita> [autoRun] Auto run startup apps";
-String_* String_334; static const wchar_t *String_334_ = L"<Tofita> GUI process ID == %u\n";
+String_* String_333; static const wchar_t *String_333_ = L"<KOSMOS> [autoRun] Auto run startup apps";
+String_* String_334; static const wchar_t *String_334_ = L"<KOSMOS> GUI process ID == %u\n";
 String_* String_335; static const wchar_t *String_335_ = L"desktop/demo64.exe";
 String_* String_336; static const wchar_t *String_336_ = L"desktop/sol64.exe";
 String_* String_337; static const wchar_t *String_337_ = L"sol64.exe";
-String_* String_338; static const wchar_t *String_338_ = L"<Tofita> [engineThread] thread started";
+String_* String_338; static const wchar_t *String_338_ = L"<KOSMOS> [engineThread] thread started";
 String_* String_339; static const wchar_t *String_339_ = L"[[PID %d \'%S\']] ";
 String_* String_340; static const wchar_t *String_340_ = L"[[PID %d \'%S\' (32-bit)]] ";
 String_* String_341; static const wchar_t *String_341_ = L"{payload.message read probe failed}";
@@ -1554,7 +1554,7 @@ String_* String_349; static const wchar_t *String_349_ = L"#BP with IP at %8\n";
 String_* String_350; static const wchar_t *String_350_ = L"App ";
 String_* String_351; static const wchar_t *String_351_ = L" has compatibility issues, press ~ for more info.";
 String_* String_352; static const wchar_t *String_352_ = L"[[PID %d]] Unknown or unhandled syscall %d\n";
-String_* String_353; static const wchar_t *String_353_ = L"<Tofita> [guiThread] thread started";
+String_* String_353; static const wchar_t *String_353_ = L"<KOSMOS> [guiThread] thread started";
 String_* String_354; static const wchar_t *String_354_ = L"[cpu] begin: remap PIC";
 String_* String_355; static const wchar_t *String_355_ = L"[cpu] done: remap PIC";
 String_* String_356; static const wchar_t *String_356_ = L"[cpu] begin: disable PIC";
@@ -1578,34 +1578,34 @@ String_* String_373; static const wchar_t *String_373_ = L"[loadExeIntoProcess] 
 String_* String_374; static const wchar_t *String_374_ = L"[loadExeIntoProcess] process is 32 bit\n";
 String_* String_375; static const wchar_t *String_375_ = L"0b";
 String_* String_376; static const wchar_t *String_376_ = L"<STRING IS NULL OR BAD POINTER %8>";
-String_* String_377; static const wchar_t *String_377_ = L"<Tofita> Kosmos ";
+String_* String_377; static const wchar_t *String_377_ = L"<KOSMOS> Kosmos ";
 String_* String_378; static const wchar_t *String_378_ = L".";
 String_* String_379; static const wchar_t *String_379_ = L" engine loaded and operational";
-String_* String_380; static const wchar_t *String_380_ = L"<Tofita> CR3 points to: %8\n";
+String_* String_380; static const wchar_t *String_380_ = L"<KOSMOS> CR3 points to: %8\n";
 String_* String_381; static const wchar_t *String_381_ = L"Engine ready...";
 String_* String_382; static const wchar_t *String_382_ = L"Initializing CPU features...";
-String_* String_383; static const wchar_t *String_383_ = L"<Tofita> void*: 4 bytes";
-String_* String_384; static const wchar_t *String_384_ = L"<Tofita> void*: 8 bytes";
+String_* String_383; static const wchar_t *String_383_ = L"<KOSMOS> void*: 4 bytes";
+String_* String_384; static const wchar_t *String_384_ = L"<KOSMOS> void*: 8 bytes";
 String_* String_385; static const wchar_t *String_385_ = L"Initializing interrupts...";
 String_* String_386; static const wchar_t *String_386_ = L"Initializing GUI...";
 String_* String_387; static const wchar_t *String_387_ = L"Development copy. Build ";
-String_* String_388; static const wchar_t *String_388_ = L"<Tofita> quakePrintf(versionText.utf16())";
+String_* String_388; static const wchar_t *String_388_ = L"<KOSMOS> quakePrintf(versionText.utf16())";
 String_* String_389; static const wchar_t *String_389_ = L"Kosmos ";
 String_* String_390; static const wchar_t *String_390_ = L" is loaded and operational\n";
 String_* String_391; static const wchar_t *String_391_ = L"[CPU] \'%s\' \'%s\' %d MB RAM\n";
-String_* String_392; static const wchar_t *String_392_ = L"<Tofita> cannot allocate trapeze under 1 MB";
+String_* String_392; static const wchar_t *String_392_ = L"<KOSMOS> cannot allocate trapeze under 1 MB";
 String_* String_393; static const wchar_t *String_393_ = L"Cannot allocate trapeze under 1 MB, got at %8\n";
 String_* String_394; static const wchar_t *String_394_ = L"trapeze.sys";
 String_* String_395; static const wchar_t *String_395_ = L"Copy trapeze %d bytes\n";
 String_* String_396; static const wchar_t *String_396_ = L"Initializing ACPI...";
 String_* String_397; static const wchar_t *String_397_ = L"ACPI is *not* loaded, probably incompatible motherboard or outdated BIOS\n";
 String_* String_398; static const wchar_t *String_398_ = L"ACPI 2.0 is loaded and ready\n";
-String_* String_399; static const wchar_t *String_399_ = L"root/Windows/Web/Wallpaper/Tofita/default.png";
+String_* String_399; static const wchar_t *String_399_ = L"root/Windows/Web/Wallpaper/ReactOS/sky.png";
 String_* String_400; static const wchar_t *String_400_ = L"Initializing DWM...";
 String_* String_401; static const wchar_t *String_401_ = L"Initializing scheduler...";
 String_* String_402; static const wchar_t *String_402_ = L"System";
 String_* String_403; static const wchar_t *String_403_ = L"Starting apps...";
-String_* String_404; static const wchar_t *String_404_ = L"<Tofita> [ready for scheduling]";
+String_* String_404; static const wchar_t *String_404_ = L"<KOSMOS> [ready for scheduling]";
 String_* String_405; static const wchar_t *String_405_ = L"1";
 String_* String_406; static const wchar_t *String_406_ = L"2";
 String_* String_407; static const wchar_t *String_407_ = L"3";
@@ -7325,13 +7325,13 @@ static void* HeapAllocAt(size_t lineNumber, char const* filename, char const* fu
 
 	// TODO instead of HEAP_C, pre-init physical allocator in engineMain
 	if (heapOffset >= HEAP_C) {
-		// puts_("<Tofita> Heap overflow -> allocating new heap\n");
+		// puts_("<KOSMOS> Heap overflow -> allocating new heap\n");
 		// TODO heap zero fill?
 		heap = (uint8_t*)PhysicalAllocator_$allocateBytes_(HEAP_C);
 		heapOffset = 16 + size;
 
 		if (heap == nullptr) {
-			puts_((uint8_t*)"<Tofita> Heap total overflow\n");
+			puts_((uint8_t*)"<KOSMOS> Heap total overflow\n");
 		};
 
 		while (heap == nullptr) {

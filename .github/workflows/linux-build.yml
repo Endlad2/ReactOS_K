@@ -1,0 +1,92 @@
+name: Linux Build (RosBE)
+
+on:
+  workflow_dispatch:
+    inputs:
+      ARCH:
+        description: 'Target architecture (i386 or amd64)'
+        required: true
+        default: 'i386'
+      build_type:
+        description: 'Build type (all, bootcd, livecd, hybridcd)'
+        required: true
+        default: 'livecd'
+
+jobs:
+  build-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install RosBE
+        run: |
+          sudo add-apt-repository ppa:reactos/rosbe-unix -y
+          sudo apt-get update
+          sudo apt-get install rosbe-unix -y
+
+      - name: Setup RosBE environment
+        run: |
+          # Source RosBE to set up environment
+          source /usr/local/RosBE/RosBE.sh
+          
+          # Save environment for next steps
+          echo "PATH=$PATH" >> $GITHUB_ENV
+          echo "ROSBE_VERSION=$(rosbe-version)" >> $GITHUB_ENV
+          echo "CC=gcc" >> $GITHUB_ENV
+          echo "CXX=g++" >> $GITHUB_ENV
+
+      - name: Configure
+        run: |
+          source /usr/local/RosBE/RosBE.sh
+          ./configure.cmd -DARCH=${{ github.event.inputs.ARCH }}
+
+      - name: List files in output directory before build
+        run: |
+          OUTPUT_DIR="output-MinGW-${{ github.event.inputs.ARCH }}"
+          if [ -d "$OUTPUT_DIR" ]; then
+            echo "Files in $OUTPUT_DIR BEFORE build:"
+            find "$OUTPUT_DIR" -type f | sort | head -20
+            echo "... and more files (total: $(find "$OUTPUT_DIR" -type f | wc -l))"
+          else
+            echo "Output directory $OUTPUT_DIR does not exist yet."
+          fi
+
+      - name: Build
+        working-directory: output-MinGW-${{ github.event.inputs.ARCH }}
+        run: |
+          source /usr/local/RosBE/RosBE.sh
+          ninja ${{ github.event.inputs.build_type }}
+
+      - name: Prepare artifacts
+        run: |
+          OUTPUT_DIR="output-MinGW-${{ github.event.inputs.ARCH }}"
+          ARTIFACT_DIR="${{ runner.temp }}/artifacts"
+          
+          mkdir -p "$ARTIFACT_DIR"
+          
+          # Copy build results
+          if [ -d "$OUTPUT_DIR" ]; then
+            echo "Copying build artifacts from $OUTPUT_DIR..."
+            cp -r "$OUTPUT_DIR"/* "$ARTIFACT_DIR"/ 2>/dev/null || true
+            
+            # List important files
+            echo "Important build artifacts:"
+            ls -la "$OUTPUT_DIR"/ | head -30
+            
+            # Check for ISO files
+            if ls "$OUTPUT_DIR"/*.iso 1> /dev/null 2>&1; then
+              echo "ISO files found:"
+              ls -la "$OUTPUT_DIR"/*.iso
+            fi
+          else
+            echo "Warning: Output directory $OUTPUT_DIR not found!"
+          fi
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: reactos-${{ github.event.inputs.ARCH }}-${{ github.event.inputs.build_type }}-linux
+          path: ${{ runner.temp }}/artifacts/
+          if-no-files-found: warn
+          retention-days: 7

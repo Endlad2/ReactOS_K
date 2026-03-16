@@ -44,7 +44,7 @@ jobs:
         shell: pwsh
         run: |
           # Source the RosBE environment
-          & "C:\RosBE\RosBE.ps1"
+          & "C:\RosBE\RosBE.cmd"
 
           # Change to the project directory (GitHub workspace)
           Set-Location -Path $env:GITHUB_WORKSPACE

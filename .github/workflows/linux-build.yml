@@ -1,4 +1,4 @@
-name: Linux Build (RosBE)
+name: Linux Build (RosBE on Ubuntu 20.04)
 
 on:
   workflow_dispatch:
@@ -14,25 +14,42 @@ on:
 
 jobs:
   build-linux:
-    runs-on: ubuntu-22.04  # Важно: используем Ubuntu 22.04, а не 24.04
+    # Используем Ubuntu 20.04, так как только для нее есть пакеты в PPA
+    runs-on: ubuntu-20.04
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
       - name: Install RosBE from PPA
         run: |
+          # Добавляем PPA и устанавливаем RosBE
           sudo add-apt-repository ppa:reactos/rosbe-unix -y
           sudo apt-get update
-          sudo apt-get install rosbe-unix -y
+        
+          # Устанавливаем RosBE (пакет может называться по-другому, проверим)
+          # Сначала попробуем найти доступные пакеты
+          apt-cache search rosbe
+          
+          # Устанавливаем основную среду
+          sudo apt-get install -y rosbe-unix
           
           # Проверяем установку
-          echo "RosBE installed successfully"
-          ls -la /usr/local/RosBE/
+          echo "RosBE installed. Contents of /usr/local/RosBE:"
+          ls -la /usr/local/RosBE/ || echo "Directory not found, trying alternative location..."
+          ls -la /usr/local/bin/ | grep rosbe || true
 
       - name: Configure
         run: |
-          # Активируем окружение RosBE
-          source /usr/local/RosBE/RosBE.sh
+          # Активируем окружение RosBE (путь может отличаться)
+          if [ -f "/usr/local/RosBE/RosBE.sh" ]; then
+            source /usr/local/RosBE/RosBE.sh
+          elif [ -f "/usr/local/bin/rosbe" ]; then
+            # Альтернативный способ активации
+            source /usr/local/bin/rosbe
+          else
+            echo "RosBE not found in standard locations!"
+            exit 1
+          fi
           
           # Запускаем configure
           echo "Running configure.cmd for ARCH=${{ github.event.inputs.ARCH }}..."
@@ -40,9 +57,7 @@ jobs:
 
       - name: List files in output directory before build
         run: |
-          source /usr/local/RosBE/RosBE.sh
           OUTPUT_DIR="output-MinGW-${{ github.event.inputs.ARCH }}"
-          
           if [ -d "$OUTPUT_DIR" ]; then
             echo "Files in $OUTPUT_DIR BEFORE build:"
             find "$OUTPUT_DIR" -type f | sort | head -20
@@ -53,31 +68,17 @@ jobs:
 
       - name: Build
         run: |
-          source /usr/local/RosBE/RosBE.sh
-          OUTPUT_DIR="output-MinGW-${{ github.event.inputs.ARCH }}"
+          # Активируем окружение RosBE
+          if [ -f "/usr/local/RosBE/RosBE.sh" ]; then
+            source /usr/local/RosBE/RosBE.sh
+          elif [ -f "/usr/local/bin/rosbe" ]; then
+            source /usr/local/bin/rosbe
+          fi
           
-          # Переходим в директорию сборки
-          cd "$OUTPUT_DIR"
-          
-          # Запускаем сборку
+          # Переходим в директорию сборки и запускаем ninja
+          cd "output-MinGW-${{ github.event.inputs.ARCH }}"
           echo "Running ninja ${{ github.event.inputs.build_type }}..."
           ninja ${{ github.event.inputs.build_type }}
-
-      - name: List build results
-        run: |
-          source /usr/local/RosBE/RosBE.sh
-          OUTPUT_DIR="output-MinGW-${{ github.event.inputs.ARCH }}"
-          
-          echo "Build results in $OUTPUT_DIR:"
-          ls -la "$OUTPUT_DIR"/
-          
-          # Ищем ISO файлы
-          if ls "$OUTPUT_DIR"/*.iso 1> /dev/null 2>&1; then
-            echo "ISO files found:"
-            ls -la "$OUTPUT_DIR"/*.iso
-          else
-            echo "No ISO files found in $OUTPUT_DIR"
-          fi
 
       - name: Prepare artifacts
         run: |
@@ -86,13 +87,11 @@ jobs:
           
           mkdir -p "$ARTIFACT_DIR"
           
-          # Копируем результаты сборки
           if [ -d "$OUTPUT_DIR" ]; then
             echo "Copying build artifacts from $OUTPUT_DIR..."
             cp -r "$OUTPUT_DIR"/* "$ARTIFACT_DIR"/ 2>/dev/null || true
             
-            # Показываем, что скопировали
-            echo "Artifacts prepared:"
+            echo "Artifacts prepared. Contents:"
             ls -la "$ARTIFACT_DIR"/
           else
             echo "Warning: Output directory $OUTPUT_DIR not found!"
@@ -104,4 +103,3 @@ jobs:
           name: reactos-${{ github.event.inputs.ARCH }}-${{ github.event.inputs.build_type }}-linux
           path: ${{ runner.temp }}/artifacts/
           if-no-files-found: warn
-          retention-days: 7

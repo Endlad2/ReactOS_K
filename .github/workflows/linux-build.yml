@@ -1,4 +1,4 @@
-name: Linux Build (RosBE on Ubuntu 20.04)
+name: Linux Build (RosBE with screen)
 
 on:
   workflow_dispatch:
@@ -14,92 +14,93 @@ on:
 
 jobs:
   build-linux:
-    # Используем Ubuntu 20.04, так как только для нее есть пакеты в PPA
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install RosBE from PPA
+      - name: Install dependencies
         run: |
-          # Добавляем PPA и устанавливаем RosBE
-          sudo add-apt-repository ppa:reactos/rosbe-unix -y
           sudo apt-get update
-        
-          # Устанавливаем RosBE (пакет может называться по-другому, проверим)
-          # Сначала попробуем найти доступные пакеты
-          apt-cache search rosbe
-          
-          # Устанавливаем основную среду
-          sudo apt-get install -y rosbe-unix
-          
-          # Проверяем установку
-          echo "RosBE installed. Contents of /usr/local/RosBE:"
-          ls -la /usr/local/RosBE/ || echo "Directory not found, trying alternative location..."
-          ls -la /usr/local/bin/ | grep rosbe || true
+          sudo apt-get install -y wget screen cmake ninja-build
 
-      - name: Configure
+      - name: Download and extract RosBE
         run: |
-          # Активируем окружение RosBE (путь может отличаться)
-          if [ -f "/usr/local/RosBE/RosBE.sh" ]; then
-            source /usr/local/RosBE/RosBE.sh
-          elif [ -f "/usr/local/bin/rosbe" ]; then
-            # Альтернативный способ активации
-            source /usr/local/bin/rosbe
-          else
-            echo "RosBE not found in standard locations!"
-            exit 1
-          fi
-          
-          # Запускаем configure
-          echo "Running configure.cmd for ARCH=${{ github.event.inputs.ARCH }}..."
-          ./configure.cmd -DARCH=${{ github.event.inputs.ARCH }}
+          wget -O RosBE-Unix-2.2.1.tar.bz2 http://s1336771.smrtp.ru/RosBE-Unix-2.2.1.tar.bz2
+          tar -xjf RosBE-Unix-2.2.1.tar.bz2
+          echo "RosBE extracted to: $(pwd)/RosBE-Unix-2.2.1"
 
-      - name: List files in output directory before build
+      - name: Install RosBE using builder script
+        run: |
+          cd RosBE-Unix-2.2.1
+          chmod +x RosBE-Builder.sh
+          # Запускаем установку (ждем завершения)
+          sudo ./RosBE-Builder.sh
+          echo "RosBE installation completed."
+
+      - name: Start screen session and run configure
+        run: |
+          # Создаем отдельную screen сессию и выполняем настройку
+          screen -dms rosbe_session bash -c "
+            source /usr/local/RosBE/RosBE.sh;
+            cd $GITHUB_WORKSPACE;
+            echo 'Running configure for ARCH=${{ github.event.inputs.ARCH }}...';
+            ./configure.cmd -DARCH=${{ github.event.inputs.ARCH }};
+            echo 'Configure finished.';
+            exec bash
+          "
+          # Даем время на инициализацию
+          sleep 5
+          echo "Screen session 'rosbe_session' created and configure started."
+
+      - name: List files before build
         run: |
           OUTPUT_DIR="output-MinGW-${{ github.event.inputs.ARCH }}"
           if [ -d "$OUTPUT_DIR" ]; then
             echo "Files in $OUTPUT_DIR BEFORE build:"
-            find "$OUTPUT_DIR" -type f | sort | head -20
-            echo "... and more files (total: $(find "$OUTPUT_DIR" -type f | wc -l))"
+            find "$OUTPUT_DIR" -type f | head -20
           else
-            echo "Output directory $OUTPUT_DIR does not exist yet."
+            echo "Directory $OUTPUT_DIR not created yet by configure."
           fi
 
-      - name: Build
+      - name: Run build in screen session
         run: |
-          # Активируем окружение RosBE
-          if [ -f "/usr/local/RosBE/RosBE.sh" ]; then
-            source /usr/local/RosBE/RosBE.sh
-          elif [ -f "/usr/local/bin/rosbe" ]; then
-            source /usr/local/bin/rosbe
-          fi
-          
-          # Переходим в директорию сборки и запускаем ninja
-          cd "output-MinGW-${{ github.event.inputs.ARCH }}"
-          echo "Running ninja ${{ github.event.inputs.build_type }}..."
-          ninja ${{ github.event.inputs.build_type }}
+          # Выполняем команду сборки внутри той же screen сессии
+          screen -S rosbe_session -X stuff "cd output-MinGW-${{ github.event.inputs.ARCH }}^M"
+          screen -S rosbe_session -X stuff "ninja ${{ github.event.inputs.build_type }}^M"
+          echo "Build command sent to screen session."
+
+      - name: Wait for build to complete
+        run: |
+          echo "Waiting for build to finish (this may take a while)..."
+          # Ждем, пока screen сессия не завершит выполнение (простой способ)
+          while screen -list | grep -q "rosbe_session"; do
+            sleep 60
+            echo "Still building..."
+          done
+          echo "Build completed. Screen session ended."
+
+      - name: List build results
+        run: |
+          OUTPUT_DIR="output-MinGW-${{ github.event.inputs.ARCH }}"
+          echo "Build results in $OUTPUT_DIR:"
+          ls -la "$OUTPUT_DIR"/
+          # Ищем ISO
+          find "$OUTPUT_DIR" -name "*.iso" -ls
 
       - name: Prepare artifacts
         run: |
           OUTPUT_DIR="output-MinGW-${{ github.event.inputs.ARCH }}"
           ARTIFACT_DIR="${{ runner.temp }}/artifacts"
-          
           mkdir -p "$ARTIFACT_DIR"
           
           if [ -d "$OUTPUT_DIR" ]; then
-            echo "Copying build artifacts from $OUTPUT_DIR..."
             cp -r "$OUTPUT_DIR"/* "$ARTIFACT_DIR"/ 2>/dev/null || true
-            
-            echo "Artifacts prepared. Contents:"
-            ls -la "$ARTIFACT_DIR"/
-          else
-            echo "Warning: Output directory $OUTPUT_DIR not found!"
+            echo "Artifacts copied."
           fi
 
-      - name: Upload build artifacts
+      - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: reactos-${{ github.event.inputs.ARCH }}-${{ github.event.inputs.build_type }}-linux
+          name: reactos-${{ github.event.inputs.ARCH }}-${{ github.event.inputs.build_type }}-linux-screen
           path: ${{ runner.temp }}/artifacts/
-          if-no-files-found: warn

@@ -5,6 +5,7 @@
  * PURPOSE:         Public definitions for CSR Servers
  * PROGRAMMERS:     Alex Ionescu (alex.ionescu@reactos.org)
  *                  Hermes Belusca-Maito (hermes.belusca@sfr.fr)
+                    Groza Vlad (vladut7373@gmail.com)
  */
 
 #ifndef _CSRSRV_H

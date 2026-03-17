@@ -1,4 +1,4 @@
-name: Linux Build (RosBE with screen)
+name: Linux Build (RosBE)
 
 on:
   workflow_dispatch:
@@ -34,73 +34,112 @@ jobs:
         run: |
           cd RosBE-Unix-2.2.1
           chmod +x RosBE-Builder.sh
-          # Запускаем установку (ждем завершения)
-          sudo ./RosBE-Builder.sh
+          # Автоматический ответ на запросы (принимаем путь по умолчанию)
+          echo | sudo ./RosBE-Builder.sh
           echo "RosBE installation completed."
 
-      - name: Start screen session and run configure
+      - name: Configure and build in screen session
         run: |
-          # Создаем отдельную screen сессию и выполняем настройку
-          screen -dms rosbe_session bash -c "
+          ARCH="${{ github.event.inputs.ARCH }}"
+          BUILD_TYPE="${{ github.event.inputs.build_type }}"
+          
+          # Создаем screen сессию и выполняем все команды последовательно
+          screen -dmS rosbe_session bash -c "
             source /usr/local/RosBE/RosBE.sh;
             cd $GITHUB_WORKSPACE;
-            echo 'Running configure for ARCH=${{ github.event.inputs.ARCH }}...';
-            ./configure.cmd -DARCH=${{ github.event.inputs.ARCH }};
-            echo 'Configure finished.';
+            
+            echo '=== Running configure for ARCH='\$ARCH'... ===';
+            ./configure.cmd -DARCH=\$ARCH;
+            
+            if [ \$? -eq 0 ]; then
+              echo '=== Configure successful, starting build... ===';
+              cd output-MinGW-\$ARCH;
+              ninja \$BUILD_TYPE;
+              
+              if [ \$? -eq 0 ]; then
+                echo '=== Build completed successfully! ===';
+              else
+                echo '=== Build failed! ===';
+                exit 1;
+              fi
+            else
+              echo '=== Configure failed! ===';
+              exit 1;
+            fi
+            
+            # Держим сессию открытой для просмотра результатов
             exec bash
           "
-          # Даем время на инициализацию
-          sleep 5
-          echo "Screen session 'rosbe_session' created and configure started."
+          
+          echo "Screen session 'rosbe_session' created with configure and build commands."
 
-      - name: List files before build
+      - name: Monitor build progress
+        run: |
+          echo "Monitoring build progress (updates every 30 seconds)..."
+          echo "To view full logs, check the 'Attach to screen session' step if build fails."
+          
+          # Отслеживаем прогресс сборки
+          while screen -list | grep -q "rosbe_session"; do
+            # Показываем последние строки из screen-лога (если доступно)
+            if [ -f "screenlog.0" ]; then
+              echo "=== Last 5 lines of build log ==="
+              tail -5 screenlog.0
+            fi
+            sleep 30
+          done
+          
+          # Проверяем результат сборки по наличию ISO
+          OUTPUT_DIR="output-MinGW-${{ github.event.inputs.ARCH }}"
+          if [ -d "$OUTPUT_DIR" ] && find "$OUTPUT_DIR" -name "*.iso" | grep -q .; then
+            echo "Build completed successfully! ISO files found."
+            exit 0
+          else
+            echo "Build failed or no ISO files produced!"
+            exit 1
+          fi
+
+      - name: Attach to screen session (if build failed)
+        if: failure()
+        run: |
+          echo "=== Build failed. Attaching to screen session for debugging ==="
+          screen -r rosbe_session || echo "Screen session already ended or not accessible"
+
+      - name: List build results
+        if: always()
         run: |
           OUTPUT_DIR="output-MinGW-${{ github.event.inputs.ARCH }}"
           if [ -d "$OUTPUT_DIR" ]; then
-            echo "Files in $OUTPUT_DIR BEFORE build:"
-            find "$OUTPUT_DIR" -type f | head -20
+            echo "=== Build results in $OUTPUT_DIR ==="
+            ls -la "$OUTPUT_DIR"/
+            echo "=== ISO files found ==="
+            find "$OUTPUT_DIR" -name "*.iso" -ls
           else
-            echo "Directory $OUTPUT_DIR not created yet by configure."
+            echo "Output directory $OUTPUT_DIR not found!"
           fi
 
-      - name: Run build in screen session
-        run: |
-          # Выполняем команду сборки внутри той же screen сессии
-          screen -S rosbe_session -X stuff "cd output-MinGW-${{ github.event.inputs.ARCH }}^M"
-          screen -S rosbe_session -X stuff "ninja ${{ github.event.inputs.build_type }}^M"
-          echo "Build command sent to screen session."
-
-      - name: Wait for build to complete
-        run: |
-          echo "Waiting for build to finish (this may take a while)..."
-          # Ждем, пока screen сессия не завершит выполнение (простой способ)
-          while screen -list | grep -q "rosbe_session"; do
-            sleep 60
-            echo "Still building..."
-          done
-          echo "Build completed. Screen session ended."
-
-      - name: List build results
-        run: |
-          OUTPUT_DIR="output-MinGW-${{ github.event.inputs.ARCH }}"
-          echo "Build results in $OUTPUT_DIR:"
-          ls -la "$OUTPUT_DIR"/
-          # Ищем ISO
-          find "$OUTPUT_DIR" -name "*.iso" -ls
-
       - name: Prepare artifacts
+        if: always()
         run: |
           OUTPUT_DIR="output-MinGW-${{ github.event.inputs.ARCH }}"
           ARTIFACT_DIR="${{ runner.temp }}/artifacts"
           mkdir -p "$ARTIFACT_DIR"
           
           if [ -d "$OUTPUT_DIR" ]; then
-            cp -r "$OUTPUT_DIR"/* "$ARTIFACT_DIR"/ 2>/dev/null || true
-            echo "Artifacts copied."
+            # Копируем ISO файлы
+            find "$OUTPUT_DIR" -name "*.iso" -exec cp {} "$ARTIFACT_DIR"/ \;
+            
+            # Также копируем логи сборки, если есть
+            if [ -f "screenlog.0" ]; then
+              cp screenlog.0 "$ARTIFACT_DIR"/build_log.txt
+            fi
+            
+            echo "Artifacts prepared in $ARTIFACT_DIR"
+            ls -la "$ARTIFACT_DIR"/
           fi
 
       - name: Upload artifacts
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: reactos-${{ github.event.inputs.ARCH }}-${{ github.event.inputs.build_type }}-linux-screen
+          name: reactos-${{ github.event.inputs.ARCH }}-${{ github.event.inputs.build_type }}
           path: ${{ runner.temp }}/artifacts/

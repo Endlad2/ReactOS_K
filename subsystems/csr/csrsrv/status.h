@@ -83,8 +83,8 @@
 /* Public SB API Interface Status (session.c)
  * CsrSbCreateSession                           - IMPLEMENTED
  * CsrSbForeignSessionComplete                  - IMPLEMENTED
- * CsrSbTerminateSession                        - UNIMPLEMENTED
- * CsrSbCreateProcess                           - UNIMPLEMENTED
+ * CsrSbTerminateSession                        - IMPLEMENTED
+ * CsrSbCreateProcess                           - PARTLY_IMPLEMENTED
  */
 
 /* What's missing:

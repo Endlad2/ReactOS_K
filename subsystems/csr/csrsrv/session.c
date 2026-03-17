@@ -188,6 +188,101 @@ CsrDereferenceNtSession(IN PCSR_NT_SESSION Session,
 
 /* SESSION MANAGER FUNCTIONS **************************************************/
 
+
+static
+PCSR_NT_SESSION
+NTAPI
+CsrLocateNtSessionById(IN ULONG SessionId,
+                       IN BOOLEAN ReferenceSession)
+{
+    PLIST_ENTRY NextEntry;
+    PCSR_NT_SESSION NtSession = NULL;
+
+    CsrAcquireNtSessionLock();
+
+    NextEntry = CsrNtSessionList.Flink;
+    while (NextEntry != &CsrNtSessionList)
+    {
+        NtSession = CONTAINING_RECORD(NextEntry, CSR_NT_SESSION, SessionLink);
+        if (NtSession->SessionId == SessionId)
+        {
+            if (ReferenceSession) NtSession->ReferenceCount++;
+            break;
+        }
+
+        NtSession = NULL;
+        NextEntry = NextEntry->Flink;
+    }
+
+    CsrReleaseNtSessionLock();
+    return NtSession;
+}
+
+static
+NTSTATUS
+NTAPI
+CsrGetProcessSessionId(IN HANDLE ProcessHandle,
+                       OUT PULONG SessionId)
+{
+    PROCESS_SESSION_INFORMATION SessionInformation;
+    NTSTATUS Status;
+
+    Status = NtQueryInformationProcess(ProcessHandle,
+                                       ProcessSessionInformation,
+                                       &SessionInformation,
+                                       sizeof(SessionInformation),
+                                       NULL);
+    if (!NT_SUCCESS(Status)) return Status;
+
+    *SessionId = SessionInformation.SessionId;
+    return STATUS_SUCCESS;
+}
+
+static
+NTSTATUS
+NTAPI
+CsrReferenceSingleActiveNtSession(OUT PCSR_NT_SESSION *NtSession)
+{
+    PLIST_ENTRY NextEntry;
+    PCSR_NT_SESSION CurrentSession = NULL;
+
+    *NtSession = NULL;
+
+    CsrAcquireNtSessionLock();
+
+    NextEntry = CsrNtSessionList.Flink;
+    while (NextEntry != &CsrNtSessionList)
+    {
+        CurrentSession = CONTAINING_RECORD(NextEntry, CSR_NT_SESSION, SessionLink);
+
+        if (!(CurrentSession->Flags & CsrNtSessionTerminating))
+        {
+            if (*NtSession)
+            {
+                CsrReleaseNtSessionLock();
+                DPRINT1("CSRSS: Multiple active NT sessions present, cannot pick a unique target\n");
+                return STATUS_INVALID_PARAMETER;
+            }
+
+            CurrentSession->ReferenceCount++;
+            *NtSession = CurrentSession;
+        }
+
+        NextEntry = NextEntry->Flink;
+    }
+
+    CsrReleaseNtSessionLock();
+
+    if (!*NtSession)
+    {
+        DPRINT1("CSRSS: No active NT session available for process creation\n");
+        return STATUS_NOT_FOUND;
+    }
+
+    return STATUS_SUCCESS;
+}
+
+
 /*++
  * @name CsrSbCreateSession
  *
@@ -364,8 +459,23 @@ BOOLEAN
 NTAPI
 CsrSbForeignSessionComplete(IN PSB_API_MSG ApiMessage)
 {
-    /* Deprecated/Unimplemented in NT */
-    ApiMessage->ReturnValue = STATUS_NOT_IMPLEMENTED;
+    ULONG SessionId = ApiMessage->u.ForeignSessionComplete.SessionId;
+    PCSR_NT_SESSION NtSession;
+
+    NtSession = CsrLocateNtSessionById(SessionId, FALSE);
+    if (!NtSession)
+    {
+        DPRINT1("CSRSS: SbForeignSessionComplete for unknown session %lu\n", SessionId);
+        ApiMessage->ReturnValue = STATUS_NOT_FOUND;
+        return TRUE;
+    }
+
+    CsrAcquireNtSessionLock();
+    NtSession->Flags |= CsrNtSessionForeignCompleted;
+    CsrReleaseNtSessionLock();
+
+    DPRINT1("CSRSS: SbForeignSessionComplete for session %lu\n", SessionId);
+    ApiMessage->ReturnValue = STATUS_SUCCESS;
     return TRUE;
 }
 
@@ -387,7 +497,111 @@ BOOLEAN
 NTAPI
 CsrSbTerminateSession(IN PSB_API_MSG ApiMessage)
 {
-    ApiMessage->ReturnValue = STATUS_NOT_IMPLEMENTED;
+    PCSR_NT_SESSION NtSession;
+    PCSR_PROCESS CsrProcess;
+    PLIST_ENTRY NextEntry;
+    NTSTATUS Status = STATUS_SUCCESS;
+    NTSTATUS LocalStatus;
+    LARGE_INTEGER Timeout;
+    ULONG SessionId = ApiMessage->u.TerminateSession.SessionId;
+
+    NtSession = CsrLocateNtSessionById(SessionId, TRUE);
+    if (!NtSession)
+    {
+        DPRINT1("CSRSS: SbTerminateSession for unknown session %lu\n", SessionId);
+        ApiMessage->ReturnValue = STATUS_NOT_FOUND;
+        return TRUE;
+    }
+
+    CsrAcquireNtSessionLock();
+    NtSession->Flags |= CsrNtSessionTerminating;
+    CsrReleaseNtSessionLock();
+
+    DPRINT1("CSRSS: SbTerminateSession start for session %lu\n", SessionId);
+
+    CsrAcquireProcessLock();
+    NextEntry = CsrRootProcess->ListLink.Flink;
+    while (NextEntry != &CsrRootProcess->ListLink)
+    {
+        CsrProcess = CONTAINING_RECORD(NextEntry, CSR_PROCESS, ListLink);
+        NextEntry = NextEntry->Flink;
+
+        if (CsrProcess->NtSession != NtSession) continue;
+
+        CsrLockedReferenceProcess(CsrProcess);
+        CsrReleaseProcessLock();
+
+        DPRINT1("CSRSS: Terminating session %lu process PID=%p\n",
+                SessionId,
+                CsrProcess->ClientId.UniqueProcess);
+
+        LocalStatus = CsrDestroyProcess(&CsrProcess->ClientId, STATUS_SUCCESS);
+        if (!NT_SUCCESS(LocalStatus) && (LocalStatus != STATUS_THREAD_IS_TERMINATING))
+        {
+            DPRINT1("CSRSS: CsrDestroyProcess failed for PID=%p with status %lx\n",
+                    CsrProcess->ClientId.UniqueProcess,
+                    LocalStatus);
+            Status = LocalStatus;
+        }
+
+        Timeout.QuadPart = Int32x32To64(-1, 2 * 1000 * 1000 * 10);
+        LocalStatus = NtWaitForSingleObject(CsrProcess->ProcessHandle, FALSE, &Timeout);
+        if (LocalStatus == STATUS_TIMEOUT)
+        {
+            DPRINT1("CSRSS: Session %lu process PID=%p timed out; force-kill\n",
+                    SessionId,
+                    CsrProcess->ClientId.UniqueProcess);
+
+            LocalStatus = NtTerminateProcess(CsrProcess->ProcessHandle,
+                                             STATUS_PROCESS_IS_TERMINATING);
+            if (!NT_SUCCESS(LocalStatus))
+            {
+                DPRINT1("CSRSS: Force-kill failed for PID=%p with status %lx\n",
+                        CsrProcess->ClientId.UniqueProcess,
+                        LocalStatus);
+                Status = LocalStatus;
+            }
+            else
+            {
+                Timeout.QuadPart = Int32x32To64(-1, 1 * 1000 * 1000 * 10);
+                LocalStatus = NtWaitForSingleObject(CsrProcess->ProcessHandle,
+                                                    FALSE,
+                                                    &Timeout);
+                if (!NT_SUCCESS(LocalStatus))
+                {
+                    DPRINT1("CSRSS: Post kill wait failed for PID=%p with status %lx\n",
+                            CsrProcess->ClientId.UniqueProcess,
+                            LocalStatus);
+                    Status = LocalStatus;
+                }
+            }
+        }
+        else if (!NT_SUCCESS(LocalStatus))
+        {
+            DPRINT1("CSRSS: Wait failed for PID=%p with status %lx\n",
+                    CsrProcess->ClientId.UniqueProcess,
+                    LocalStatus);
+            Status = LocalStatus;
+        }
+        else
+        {
+            DPRINT("CSRSS: Session %lu process PID=%p terminated cleanly\n",
+                   SessionId,
+                   CsrProcess->ClientId.UniqueProcess);
+        }
+
+        CsrDereferenceProcess(CsrProcess);
+        CsrAcquireProcessLock();
+    }
+    CsrReleaseProcessLock();
+
+    CsrDereferenceNtSession(NtSession, Status);
+
+    DPRINT1("CSRSS: SbTerminateSession complete for session %lu status %lx\n",
+            SessionId,
+            Status);
+
+    ApiMessage->ReturnValue = Status;
     return TRUE;
 }
 
@@ -409,7 +623,77 @@ BOOLEAN
 NTAPI
 CsrSbCreateProcess(IN PSB_API_MSG ApiMessage)
 {
-    ApiMessage->ReturnValue = STATUS_NOT_IMPLEMENTED;
+    PSB_CREATE_PROCESS_MSG CreateProcess = &ApiMessage->u.CreateProcess;
+    PCSR_NT_SESSION NtSession;
+    NTSTATUS Status;
+    ULONG ProcessSessionId;
+
+    Status = CsrReferenceSingleActiveNtSession(&NtSession);
+    if (!NT_SUCCESS(Status))
+    {
+        ApiMessage->ReturnValue = Status;
+        return TRUE;
+    }
+
+    if (!CreateProcess->Out.ProcessHandle ||
+        !CreateProcess->Out.ThreadHandle ||
+        !CreateProcess->Out.ClientId.UniqueProcess ||
+        !CreateProcess->Out.ClientId.UniqueThread)
+    {
+        DPRINT1("CSRSS: SbCreateProcess in image-launch mode is not yet supported; session %lu\n",
+                NtSession->SessionId);
+        CsrDereferenceNtSession(NtSession, STATUS_SUCCESS);
+        ApiMessage->ReturnValue = STATUS_NOT_IMPLEMENTED;
+        return TRUE;
+    }
+
+    Status = CsrGetProcessSessionId(CreateProcess->Out.ProcessHandle,
+                                    &ProcessSessionId);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("CSRSS: SbCreateProcess failed to query process session for PID=%p: %lx\n",
+                CreateProcess->Out.ClientId.UniqueProcess,
+                Status);
+        CsrDereferenceNtSession(NtSession, STATUS_SUCCESS);
+        ApiMessage->ReturnValue = Status;
+        return TRUE;
+    }
+
+    if (ProcessSessionId != NtSession->SessionId)
+    {
+        DPRINT1("CSRSS: SbCreateProcess inconsistent session. expected=%lu actual=%lu PID=%p\n",
+                NtSession->SessionId,
+                ProcessSessionId,
+                CreateProcess->Out.ClientId.UniqueProcess);
+        CsrDereferenceNtSession(NtSession, STATUS_SUCCESS);
+        ApiMessage->ReturnValue = STATUS_INVALID_PARAMETER;
+        return TRUE;
+    }
+
+    Status = CsrCreateProcess(CreateProcess->Out.ProcessHandle,
+                              CreateProcess->Out.ThreadHandle,
+                              &CreateProcess->Out.ClientId,
+                              NtSession,
+                              0,
+                              NULL);
+
+    CsrDereferenceNtSession(NtSession, STATUS_SUCCESS);
+
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("CSRSS: SbCreateProcess failed for PID=%p session=%lu status=%lx\n",
+                CreateProcess->Out.ClientId.UniqueProcess,
+                ProcessSessionId,
+                Status);
+    }
+    else
+    {
+        DPRINT("CSRSS: SbCreateProcess success for PID=%p session=%lu\n",
+               CreateProcess->Out.ClientId.UniqueProcess,
+               ProcessSessionId);
+    }
+
+    ApiMessage->ReturnValue = Status;
     return TRUE;
 }
 

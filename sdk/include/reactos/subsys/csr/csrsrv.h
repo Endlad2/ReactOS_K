@@ -31,7 +31,14 @@ typedef struct _CSR_NT_SESSION
     ULONG ReferenceCount;
     LIST_ENTRY SessionLink;
     ULONG SessionId;
+    ULONG Flags;
 } CSR_NT_SESSION, *PCSR_NT_SESSION;
+
+typedef enum _CSR_NT_SESSION_FLAGS
+{
+    CsrNtSessionTerminating = 0x1,
+    CsrNtSessionForeignCompleted = 0x2
+} CSR_NT_SESSION_FLAGS;
 
 typedef struct _CSR_PROCESS
 {

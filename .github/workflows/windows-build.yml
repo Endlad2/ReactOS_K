@@ -8,13 +8,11 @@ on:
         required: true
         default: 'Release'
         type: string
-      
       target:
         description: 'Build Target'
         required: true
         default: 'all'
         type: string
-      
       arch:
         description: 'Architecture'
         required: true
@@ -23,24 +21,13 @@ on:
 
 jobs:
   build:
-    runs-on: windows-latest
+    runs-on: windows-2019
     
     steps:
     - name: Checkout repository
       uses: actions/checkout@v3
     
-    - name: Setup Visual Studio 2019 environment
-      uses: microsoft/setup-msbuild@v1
-      with:
-        vs-version: '16.0'
-    
-    - name: Add Ninja to PATH
-      shell: pwsh
-      run: |
-        # Ninja обычно уже установлен, но добавим в PATH если нужно
-        echo "C:\Program Files\Ninja" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
-    
-    - name: Configure and Build
+    - name: Run in VS 2019 Command Prompt
       shell: cmd
       run: |
         @echo off
@@ -51,45 +38,88 @@ jobs:
         echo Arch: ${{ github.event.inputs.arch }}
         echo ========================================
         
-        REM VS 2019 уже должен быть в PATH после setup-msbuild
-        echo Checking MSBuild availability:
-        where msbuild
+        echo Setting up Visual Studio 2019 Command Prompt...
+        
+        REM Создаем временный batch файл с командами
+        set "TEMP_SCRIPT=%TEMP%\build_script.bat"
+        
+        (
+          echo @echo off
+          echo echo ========================================
+          echo echo Inside VS 2019 Command Prompt
+          echo echo ========================================
+          echo echo.
+          echo echo Current directory: %%CD%%
+          echo echo.
+          echo echo Running configure.cmd...
+          echo call configure.cmd -DCMAKE_BUILD_TYPE=${{ github.event.inputs.build_type }} -DARCH=${{ github.event.inputs.arch }}
+          echo.
+          echo if %%ERRORLEVEL%% neq 0 ^(
+          echo   echo Configure failed with error level: %%ERRORLEVEL%%
+          echo   exit /b %%ERRORLEVEL%%
+          echo ^)
+          echo.
+          echo echo Looking for output* folder...
+          echo dir output* 2^>nul
+          echo.
+          echo for /d %%%%i in ^(output*^) do ^(
+          echo   echo Found output folder: %%%%i
+          echo   cd %%%%i
+          echo   goto :build
+          echo ^)
+          echo.
+          echo echo Error: No output* folder found!
+          echo dir
+          echo exit /b 1
+          echo.
+          echo :build
+          echo echo Now in: %%CD%%
+          echo echo.
+          echo echo Running ninja ${{ github.event.inputs.target }}
+          echo ninja ${{ github.event.inputs.target }}
+          echo.
+          echo if %%ERRORLEVEL%% neq 0 ^(
+          echo   echo Ninja build failed with error level: %%ERRORLEVEL%%
+          echo   exit /b %%ERRORLEVEL%%
+          echo ^)
+          echo.
+          echo echo Build completed successfully!
+        ) > "%TEMP_SCRIPT%"
+        
+        echo Temporary script created: %TEMP_SCRIPT%
         echo.
         
-        REM Запускаем configure.bat
-        echo Running configure.bat...
-        call configure.cmd -DCMAKE_BUILD_TYPE=${{ github.event.inputs.build_type }} -DARCH=${{ github.event.inputs.arch }}
+        REM Запускаем VS 2019 Command Prompt и выполняем скрипт
+        echo Launching VS 2019 Command Prompt...
+        
+        REM Пробуем разные пути к VS 2019
+        if exist "C:\Program Files\Microsoft Visual Studio\2019\Enterprise\VC\Auxiliary\Build\vcvars64.bat" (
+          call "C:\Program Files\Microsoft Visual Studio\2019\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
+        ) else if exist "C:\Program Files\Microsoft Visual Studio\2019\Professional\VC\Auxiliary\Build\vcvars64.bat" (
+          call "C:\Program Files\Microsoft Visual Studio\2019\Professional\VC\Auxiliary\Build\vcvars64.bat"
+        ) else if exist "C:\Program Files\Microsoft Visual Studio\2019\Community\VC\Auxiliary\Build\vcvars64.bat" (
+          call "C:\Program Files\Microsoft Visual Studio\2019\Community\VC\Auxiliary\Build\vcvars64.bat"
+        ) else if exist "C:\Program Files (x86)\Microsoft Visual Studio\2019\Enterprise\VC\Auxiliary\Build\vcvars64.bat" (
+          call "C:\Program Files (x86)\Microsoft Visual Studio\2019\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
+        ) else (
+          echo VS 2019 not found!
+          exit /b 1
+        )
         
         if %ERRORLEVEL% neq 0 (
-          echo Configure failed with error level: %ERRORLEVEL%
+          echo Failed to initialize VS 2019 environment
           exit /b %ERRORLEVEL%
         )
         
-        REM Ищем папку output*
-        echo Looking for output* folder...
-        dir output* 2>nul
+        echo VS 2019 Command Prompt initialized successfully
+        echo.
         
-        for /d %%i in (output*) do (
-          echo Found output folder: %%i
-          cd %%i
-          goto :build
-        )
+        REM Выполняем наш скрипт
+        call "%TEMP_SCRIPT%"
         
-        echo Error: No output* folder found!
-        echo Current directory contents:
-        dir
-        exit /b 1
+        set "BUILD_RESULT=%ERRORLEVEL%"
         
-        :build
-        echo Now in: %CD%
+        REM Чистим временный файл
+        del "%TEMP_SCRIPT%" 2>nul
         
-        REM Выполняем ninja
-        echo Running ninja ${{ github.event.inputs.target }}
-        ninja ${{ github.event.inputs.target }}
-        
-        if %ERRORLEVEL% neq 0 (
-          echo Ninja build failed with error level: %ERRORLEVEL%
-          exit /b %ERRORLEVEL%
-        )
-        
-        echo Build completed successfully!
+        exit /b %BUILD_RESULT%

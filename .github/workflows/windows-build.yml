@@ -1,86 +1,91 @@
-name: Windows Build (RosBE)
+name: VS 2019 Build
 
 on:
   workflow_dispatch:
     inputs:
-      ARCH:
-        description: 'Target architecture (e.g., i386, amd64)'
-        required: true
-        default: 'i386'
       build_type:
-        description: 'Build type (e.g., all, bootcd, livecd)'
+        description: 'Build Type'
+        required: true
+        default: 'Release'
+        type: string
+      
+      target:
+        description: 'Build Target'
         required: true
         default: 'all'
+        type: string
+      
+      arch:
+        description: 'Architecture'
+        required: true
+        default: 'x64'
+        type: string
 
 jobs:
-  build-windows:
-    runs-on: windows-latest
+  build:
+    runs-on: windows-2019
+    
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Download and extract RosBE
-        shell: pwsh
-        run: |
-          $ProgressPreference = 'SilentlyContinue'
-          Write-Host "Downloading RosBE..."
-          Invoke-WebRequest -Uri "http://s1336771.smrtp.ru/RosBE.zip" -OutFile "$env:TEMP\RosBE.zip"
-          Write-Host "Extracting RosBE to C:\..."
-          Expand-Archive -Path "$env:TEMP\RosBE.zip" -DestinationPath "C:\" -Force
-          Write-Host "RosBE extracted."
-
-      - name: List files in output directory before build
-        shell: pwsh
-        run: |
-          $outputPath = "output-MinGW-${{ github.event.inputs.ARCH }}"
-          if (Test-Path $outputPath) {
-            Write-Host "Files in $outputPath BEFORE build:"
-            Get-ChildItem -Path $outputPath -Recurse | Select-Object FullName
-          } else {
-            Write-Host "Output directory $outputPath does not exist yet."
-          }
-
-      - name: Configure and build ReactOS
-        shell: pwsh
-        run: |
-          # Source the RosBE environment
-          & "C:\RosBE\RosBE.cmd"
-
-          # Change to the project directory (GitHub workspace)
-          Set-Location -Path $env:GITHUB_WORKSPACE
-
-          # Run configure
-          Write-Host "Running configure.cmd for ARCH=${{ github.event.inputs.ARCH }}..."
-          .\configure.cmd -DARCH=${{ github.event.inputs.ARCH }}
-
-          # Navigate to the output directory
-          $outputDir = "output-MinGW-${{ github.event.inputs.ARCH }}"
-          Set-Location -Path $outputDir
-
-          # Run the build
-          Write-Host "Running ninja ${{ github.event.inputs.build_type }}..."
-          ninja ${{ github.event.inputs.build_type }}
-
-      - name: Prepare artifacts (new files)
-        shell: pwsh
-        run: |
-          $outputPath = "output-MinGW-${{ github.event.inputs.ARCH }}"
-          $tempArtifactPath = "$env:RUNNER_TEMP\new_artifacts"
-
-          # Create a temporary directory to store new/modified files
-          New-Item -ItemType Directory -Path $tempArtifactPath -Force | Out-Null
-
-          # This is a simplified approach: copy the entire output directory.
-          # A more precise method would require comparing file lists, which is complex in PowerShell.
-          # For this example, we'll copy the entire output directory as the build result.
-          Write-Host "Copying entire output directory to artifact staging area..."
-          Copy-Item -Path $outputPath -Destination $tempArtifactPath -Recurse -Force
-
-          # Optionally, you can list the copied files
-          Get-ChildItem -Path $tempArtifactPath -Recurse
-
-      - name: Upload build artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: reactos-build-${{ github.event.inputs.ARCH }}-${{ github.event.inputs.build_type }}-windows
-          path: ${{ runner.temp }}\new_artifacts\*
+    - name: Validate inputs
+      shell: pwsh
+      run: |
+        # Простая валидация параметров
+        $validBuildTypes = @('Debug', 'Release', 'RelWithDebInfo', 'MinSizeRel')
+        $validArchs = @('x86', 'x64', 'ARM', 'ARM64')
+        
+        if ($validBuildTypes -notcontains '${{ github.event.inputs.build_type }}') {
+          Write-Error "Invalid build_type. Must be one of: $($validBuildTypes -join ', ')"
+          exit 1
+        }
+        
+        if ($validArchs -notcontains '${{ github.event.inputs.arch }}') {
+          Write-Error "Invalid arch. Must be one of: $($validArchs -join ', ')"
+          exit 1
+        }
+    
+    - name: Checkout repository
+      uses: actions/checkout@v3
+    
+    - name: Configure and Build
+      shell: cmd
+      run: |
+        @echo off
+        echo ========================================
+        echo Build parameters:
+        echo Build Type: ${{ github.event.inputs.build_type }}
+        echo Target: ${{ github.event.inputs.target }}
+        echo Arch: ${{ github.event.inputs.arch }}
+        echo ========================================
+        
+        # Инициализация VS 2019
+        call "C:\Program Files\Microsoft Visual Studio\2019\Enterprise\Common7\Tools\VsDevCmd.bat"
+        
+        if %ERRORLEVEL% neq 0 (
+          echo Failed to initialize VS 2019
+          exit /b %ERRORLEVEL%
+        )
+        
+        # Configure
+        echo Running configure...
+        call configure.bat -DCMAKE_BUILD_TYPE=${{ github.event.inputs.build_type }} -DARCH=${{ github.event.inputs.arch }}
+        
+        if %ERRORLEVEL% neq 0 exit /b %ERRORLEVEL%
+        
+        # Find output folder
+        for /d %%i in (output*) do (
+          echo Found output folder: %%i
+          cd %%i
+          goto :build
+        )
+        
+        echo No output folder found!
+        dir
+        exit /b 1
+        
+        :build
+        echo Building in %CD%
+        ninja ${{ github.event.inputs.target }}
+        
+        if %ERRORLEVEL% neq 0 exit /b %ERRORLEVEL%
+        
+        echo Build successful!

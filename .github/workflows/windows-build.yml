@@ -21,11 +21,25 @@ on:
 
 jobs:
   build:
-    runs-on: windows-latest
+    runs-on: windows-2019
     
     steps:
     - name: Checkout repository
       uses: actions/checkout@v3
+    
+    - name: Find VS 2019 path
+      shell: pwsh
+      run: |
+        # Поиск всех установленных версий VS
+        $vsWhere = "C:\Program Files (x86)\Microsoft Visual Studio\Installer\vswhere.exe"
+        if (Test-Path $vsWhere) {
+          $vs2019 = & $vsWhere -version "[16.0,17.0)" -property installationPath
+          echo "VS 2019 found at: $vs2019"
+          echo "VS2019_PATH=$vs2019" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+        } else {
+          Write-Error "vswhere not found"
+          exit 1
+        }
     
     - name: Run in VS 2019 Command Prompt
       shell: cmd
@@ -39,6 +53,7 @@ jobs:
         echo ========================================
         
         echo Setting up Visual Studio 2019 Command Prompt...
+        echo VS2019_PATH = %VS2019_PATH%
         
         REM Создаем временный batch файл с командами
         set "TEMP_SCRIPT=%TEMP%\build_script.bat"
@@ -89,20 +104,17 @@ jobs:
         echo Temporary script created: %TEMP_SCRIPT%
         echo.
         
-        REM Запускаем VS 2019 Command Prompt и выполняем скрипт
-        echo Launching VS 2019 Command Prompt...
+        REM Запускаем VS 2019 Command Prompt используя найденный путь
+        echo Launching VS 2019 Command Prompt from %VS2019_PATH%...
         
-        REM Пробуем разные пути к VS 2019
-        if exist "C:\Program Files\Microsoft Visual Studio\2019\Enterprise\VC\Auxiliary\Build\vcvars64.bat" (
-          call "C:\Program Files\Microsoft Visual Studio\2019\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
-        ) else if exist "C:\Program Files\Microsoft Visual Studio\2019\Professional\VC\Auxiliary\Build\vcvars64.bat" (
-          call "C:\Program Files\Microsoft Visual Studio\2019\Professional\VC\Auxiliary\Build\vcvars64.bat"
-        ) else if exist "C:\Program Files\Microsoft Visual Studio\2019\Community\VC\Auxiliary\Build\vcvars64.bat" (
-          call "C:\Program Files\Microsoft Visual Studio\2019\Community\VC\Auxiliary\Build\vcvars64.bat"
-        ) else if exist "C:\Program Files (x86)\Microsoft Visual Studio\2019\Enterprise\VC\Auxiliary\Build\vcvars64.bat" (
-          call "C:\Program Files (x86)\Microsoft Visual Studio\2019\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
+        if exist "%VS2019_PATH%\VC\Auxiliary\Build\vcvars64.bat" (
+          call "%VS2019_PATH%\VC\Auxiliary\Build\vcvars64.bat"
+        ) else if exist "%VS2019_PATH%\Common7\Tools\VsDevCmd.bat" (
+          call "%VS2019_PATH%\Common7\Tools\VsDevCmd.bat"
         ) else (
-          echo VS 2019 not found!
+          echo Cannot find vcvars or VsDevCmd in %VS2019_PATH%
+          dir "%VS2019_PATH%\VC\Auxiliary\Build" 2>nul
+          dir "%VS2019_PATH%\Common7\Tools" 2>nul
           exit /b 1
         )
         

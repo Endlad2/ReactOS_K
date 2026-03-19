@@ -26,25 +26,19 @@ jobs:
     runs-on: windows-latest
     
     steps:
-    - name: Validate inputs
-      shell: pwsh
-      run: |
-        # Простая валидация параметров
-        $validBuildTypes = @('Debug', 'Release', 'RelWithDebInfo', 'MinSizeRel')
-        $validArchs = @('x86', 'x64', 'ARM', 'ARM64')
-        
-        if ($validBuildTypes -notcontains '${{ github.event.inputs.build_type }}') {
-          Write-Error "Invalid build_type. Must be one of: $($validBuildTypes -join ', ')"
-          exit 1
-        }
-        
-        if ($validArchs -notcontains '${{ github.event.inputs.arch }}') {
-          Write-Error "Invalid arch. Must be one of: $($validArchs -join ', ')"
-          exit 1
-        }
-    
     - name: Checkout repository
       uses: actions/checkout@v3
+    
+    - name: Setup Visual Studio 2019 environment
+      uses: microsoft/setup-msbuild@v1
+      with:
+        vs-version: '16.0'
+    
+    - name: Add Ninja to PATH
+      shell: pwsh
+      run: |
+        # Ninja обычно уже установлен, но добавим в PATH если нужно
+        echo "C:\Program Files\Ninja" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
     
     - name: Configure and Build
       shell: cmd
@@ -57,35 +51,45 @@ jobs:
         echo Arch: ${{ github.event.inputs.arch }}
         echo ========================================
         
-
-        call "C:\Program Files\Microsoft Visual Studio\2019\Enterprise\Common7\Tools\VsDevCmd.bat"
+        REM VS 2019 уже должен быть в PATH после setup-msbuild
+        echo Checking MSBuild availability:
+        where msbuild
+        echo.
+        
+        REM Запускаем configure.bat
+        echo Running configure.bat...
+        call configure.bat -DCMAKE_BUILD_TYPE=${{ github.event.inputs.build_type }} -DARCH=${{ github.event.inputs.arch }}
         
         if %ERRORLEVEL% neq 0 (
-          echo Failed to initialize VS 2019
+          echo Configure failed with error level: %ERRORLEVEL%
           exit /b %ERRORLEVEL%
         )
         
-
-        echo Running configure...
-        call configure.bat -DCMAKE_BUILD_TYPE=${{ github.event.inputs.build_type }} -DARCH=${{ github.event.inputs.arch }}
+        REM Ищем папку output*
+        echo Looking for output* folder...
+        dir output* 2>nul
         
-        if %ERRORLEVEL% neq 0 exit /b %ERRORLEVEL%
-        
-
         for /d %%i in (output*) do (
           echo Found output folder: %%i
           cd %%i
           goto :build
         )
         
-        echo No output folder found!
+        echo Error: No output* folder found!
+        echo Current directory contents:
         dir
         exit /b 1
         
         :build
-        echo Building in %CD%
+        echo Now in: %CD%
+        
+        REM Выполняем ninja
+        echo Running ninja ${{ github.event.inputs.target }}
         ninja ${{ github.event.inputs.target }}
         
-        if %ERRORLEVEL% neq 0 exit /b %ERRORLEVEL%
+        if %ERRORLEVEL% neq 0 (
+          echo Ninja build failed with error level: %ERRORLEVEL%
+          exit /b %ERRORLEVEL%
+        )
         
-        echo Build successful!
+        echo Build completed successfully!

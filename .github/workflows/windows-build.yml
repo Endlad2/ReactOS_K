@@ -58,7 +58,7 @@ jobs:
         
         REM Запускаем configure.bat
         echo Running configure.bat...
-        call configure.bat -DCMAKE_BUILD_TYPE=${{ github.event.inputs.build_type }} -DARCH=${{ github.event.inputs.arch }}
+        call configure.cmd -DCMAKE_BUILD_TYPE=${{ github.event.inputs.build_type }} -DARCH=${{ github.event.inputs.arch }}
         
         if %ERRORLEVEL% neq 0 (
           echo Configure failed with error level: %ERRORLEVEL%

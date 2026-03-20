@@ -15,6 +15,7 @@
 #include <math.h>
 #include <float.h>
 #include <stdlib.h>
+#include <limits.h>
 
 char *_ecvt(double value, int ndigits, int *decpt, int *sign);
 char *fcvtbuf(double arg, int ndigits, int *decpt, int *sign, char *buf);
@@ -24,7 +25,9 @@ char *fcvtbuf(double arg, int ndigits, int *decpt, int *sign, char *buf);
 # define format_float format_floatw
 #endif
 
+#ifndef MB_CUR_MAX
 #define MB_CUR_MAX 10
+#endif
 #define BUFFER_SIZE (2 * DBL_MAX_10_EXP + 32)
 
 int mbtowc(wchar_t *wchar, const char *mbchar, size_t count);
@@ -368,7 +371,7 @@ streamout_astring(FILE *stream, const char *string, size_t count)
 
 #if !defined(_USER32_WSPRINTF)
      if ((stream->_flag & _IOSTRG) && (stream->_base == NULL))
-        return count;
+        return (count > INT_MAX) ? INT_MAX : (int)count;
 #endif
 
     while (count--)
@@ -396,7 +399,7 @@ streamout_wstring(FILE *stream, const wchar_t *string, size_t count)
 
 #if defined(_UNICODE) && !defined(_USER32_WSPRINTF)
      if ((stream->_flag & _IOSTRG) && (stream->_base == NULL))
-        return count;
+        return (count > INT_MAX) ? INT_MAX : (int)count;
 #endif
 
     while (count--)
@@ -437,6 +440,8 @@ int
 __cdecl
 streamout(FILE *stream, const _TCHAR *format, va_list argptr)
 {
+    static const _TCHAR digits_l[] = _T("0123456789abcdef0x");
+    static const _TCHAR digits_u[] = _T("0123456789ABCDEF0X");
     static const char *_nullstring = "(null)";
     _TCHAR buffer[BUFFER_SIZE + 1];
     _TCHAR chr, *string;

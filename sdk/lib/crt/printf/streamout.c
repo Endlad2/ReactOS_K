@@ -10,9 +10,14 @@
 #include <stdio.h>
 #include <stdarg.h>
 #include <tchar.h>
+#include <string.h>
 #include <strings.h>
 #include <math.h>
 #include <float.h>
+#include <stdlib.h>
+
+char *_ecvt(double value, int ndigits, int *decpt, int *sign);
+char *fcvtbuf(double arg, int ndigits, int *decpt, int *sign, char *buf);
 
 #ifdef _UNICODE
 # define streamout wstreamout
@@ -20,7 +25,7 @@
 #endif
 
 #define MB_CUR_MAX 10
-#define BUFFER_SIZE (32 + 17)
+#define BUFFER_SIZE (2 * DBL_MAX_10_EXP + 32)
 
 int mbtowc(wchar_t *wchar, const char *mbchar, size_t count);
 int wctomb(char *mbchar, wchar_t wchar);
@@ -73,10 +78,19 @@ enum
 
 #ifndef _USER32_WSPRINTF
 
+static int
+streamout_append_char(_TCHAR **cursor, _TCHAR *end, _TCHAR chr)
+{
+    if (*cursor >= end)
+        return 0;
+
+    *(*cursor)++ = chr;
+    return 1;
+}
+
 void
 #ifdef _LIBCNT_
-/* Due to restrictions in kernel mode regarding the use of floating point,
-   we prevent it from being inlined */
+/* There I kept this helper out of line because kernel mode still restricts floating point usage. */
 __declspec(noinline)
 #endif
 format_float(
@@ -87,140 +101,238 @@ format_float(
     const _TCHAR **prefix,
     va_list *argptr)
 {
-    static const _TCHAR digits_l[] = _T("0123456789abcdef0x");
-    static const _TCHAR digits_u[] = _T("0123456789ABCDEF0X");
     static const _TCHAR _nan[] = _T("#QNAN");
     static const _TCHAR _infinity[] = _T("#INF");
-    const _TCHAR *digits = digits_l;
-    int exponent = 0, sign;
-    long double fpval, fpval2;
-    int padding = 0, num_digits, val32, base = 10;
+    char cvt_buffer[2 * DBL_MAX_10_EXP + 10];
+    char *digits;
+    int decpt = 0, sign = 0, i, digits_len;
+    double value;
+    _TCHAR local[BUFFER_SIZE + 1];
+    _TCHAR *cursor = local;
+    _TCHAR *end = local + BUFFER_SIZE;
+    _TCHAR *output;
+    size_t output_len;
+    _TCHAR format_chr = chr;
 
-    /* Normalize the precision */
-    if (precision < 0) precision = 6;
-    else if (precision > 17)
-    {
-        padding = precision - 17;
-        precision = 17;
-    }
+    if (precision < 0)
+        precision = 6;
 
-    /* Get the float value and calculate the exponent */
-    fpval = va_arg_ffp(*argptr, flags);
-    exponent = get_exp(fpval);
-    sign = fpval < 0 ? -1 : 1;
+    value = va_arg_ffp(*argptr, flags);
 
-    switch (chr)
-    {
-        case _T('G'):
-            digits = digits_u;
-        case _T('g'):
-            if (precision > 0) precision--;
-            if (exponent < -4 || exponent >= precision) goto case_e;
-
-            /* Shift the decimal point and round */
-            fpval2 = round(sign * fpval * pow(10., precision));
-
-            /* Skip trailing zeroes */
-            while (precision && (unsigned __int64)fpval2 % 10 == 0)
-            {
-                precision--;
-                fpval2 /= 10;
-            }
-            break;
-
-        case _T('E'):
-            digits = digits_u;
-        case _T('e'):
-        case_e:
-            /* Shift the decimal point and round */
-            fpval2 = round(sign * fpval * pow(10., precision - exponent));
-
-            /* Compensate for changed exponent through rounding */
-            if (fpval2 >= (unsigned __int64)pow(10., precision + 1))
-            {
-                exponent++;
-                fpval2 = round(sign * fpval * pow(10., precision - exponent));
-            }
-
-            val32 = exponent >= 0 ? exponent : -exponent;
-
-            // FIXME: handle length of exponent field:
-            // http://msdn.microsoft.com/de-de/library/0fatw238%28VS.80%29.aspx (DEAD_LINK)
-            num_digits = 3;
-            while (num_digits--)
-            {
-                *--(*string) = digits[val32 % 10];
-                val32 /= 10;
-            }
-
-            /* Sign for the exponent */
-            *--(*string) = exponent >= 0 ? _T('+') : _T('-');
-
-            /* Add 'e' or 'E' separator */
-            *--(*string) = digits[0xe];
-            break;
-
-        case _T('A'):
-            digits = digits_u;
-        case _T('a'):
-//            base = 16;
-            // FIXME: TODO
-
-        case _T('f'):
-        default:
-            /* Shift the decimal point and round */
-            fpval2 = round(sign * fpval * pow(10., precision));
-            break;
-    }
-
-    /* Handle sign */
-    if (fpval < 0)
-    {
+    if (value < 0)
         *prefix = _T("-");
-    }
     else if (flags & FLAG_FORCE_SIGN)
         *prefix = _T("+");
     else if (flags & FLAG_FORCE_SIGNSP)
         *prefix = _T(" ");
 
-    /* Handle special cases first */
-    if (_isnan(fpval))
+    if (_isnan(value))
     {
-        (*string) -= sizeof(_nan) / sizeof(_TCHAR) - 1;
-        _tcscpy((*string), _nan);
-        fpval2 = 1;
+        _tcsncpy(local, _nan, BUFFER_SIZE);
+        local[BUFFER_SIZE] = _T('\0');
+        output_len = _tcslen(local);
+        output = *string - output_len;
+        memcpy(output, local, (output_len + 1) * sizeof(_TCHAR));
+        *string = output;
+        return;
     }
-    else if (!_finite(fpval))
-    {
-        (*string) -= sizeof(_infinity) / sizeof(_TCHAR) - 1;
-        _tcscpy((*string), _infinity);
-        fpval2 = 1;
-    }
-    else
-    {
-        /* Zero padding */
-        while (padding-- > 0) *--(*string) = _T('0');
 
-        /* Digits after the decimal point */
-        num_digits = precision;
-        while (num_digits-- > 0)
+    if (!_finite(value))
+    {
+        _tcsncpy(local, _infinity, BUFFER_SIZE);
+        local[BUFFER_SIZE] = _T('\0');
+        output_len = _tcslen(local);
+        output = *string - output_len;
+        memcpy(output, local, (output_len + 1) * sizeof(_TCHAR));
+        *string = output;
+        return;
+    }
+
+    if (precision > DBL_DIG)
+        precision = DBL_DIG;
+
+    switch (chr)
+    {
+        case _T('G'):
+            chr = _T('g');
+            /* There I intentionally fall through after normalizing the specifier. */
+        case _T('g'):
         {
-            *--(*string) = digits[(unsigned __int64)fpval2 % 10];
-            fpval2 /= base;
+            int exponent;
+            int use_exponent;
+            int significant_digits;
+
+            significant_digits = precision == 0 ? 1 : precision;
+            digits = _ecvt(fabs(value), significant_digits, &decpt, &sign);
+            if (!digits)
+                digits = "0";
+
+            exponent = decpt - 1;
+            use_exponent = (exponent < -4 || exponent >= significant_digits);
+            if (use_exponent)
+            {
+                format_chr = (format_chr == _T('G')) ? _T('E') : _T('e');
+                precision = significant_digits - 1;
+                if (precision < 0)
+                    precision = 0;
+                digits = _ecvt(fabs(value), precision + 1, &decpt, &sign);
+                if (!digits)
+                    digits = "0";
+                if (!streamout_append_char(&cursor, end, (_TCHAR)(unsigned char)digits[0]))
+                    break;
+                if ((precision > 0 || (flags & FLAG_SPECIAL)) && !streamout_append_char(&cursor, end, _T('.')))
+                    break;
+                for (i = 1; i <= precision; ++i)
+                {
+                    char digit = digits[i] ? digits[i] : '0';
+                    if (!streamout_append_char(&cursor, end, (_TCHAR)(unsigned char)digit))
+                        break;
+                }
+                if (cursor >= end)
+                    break;
+                while (cursor > local && cursor[-1] == _T('0') && !(flags & FLAG_SPECIAL))
+                    --cursor;
+                if (cursor > local && cursor[-1] == _T('.'))
+                    --cursor;
+                if (!streamout_append_char(&cursor, end, format_chr))
+                    break;
+                if (!streamout_append_char(&cursor, end, exponent >= 0 ? _T('+') : _T('-')))
+                    break;
+                exponent = abs(exponent);
+                if (exponent >= 100)
+                {
+                    if (!streamout_append_char(&cursor, end, (_TCHAR)('0' + (exponent / 100) % 10)))
+                        break;
+                }
+                if (!streamout_append_char(&cursor, end, (_TCHAR)('0' + (exponent / 10) % 10)))
+                    break;
+                if (!streamout_append_char(&cursor, end, (_TCHAR)('0' + exponent % 10)))
+                    break;
+            }
+            else
+            {
+                precision = significant_digits - decpt;
+                if (precision < 0)
+                    precision = 0;
+                digits = fcvtbuf(fabs(value), precision, &decpt, &sign, cvt_buffer);
+                if (!digits)
+                    digits = "0";
+                digits_len = (int)strlen(digits);
+                i = 0;
+                if (decpt <= 0)
+                {
+                    if (!streamout_append_char(&cursor, end, _T('0')))
+                        break;
+                }
+                else
+                {
+                    for (i = 0; i < decpt; ++i)
+                    {
+                        char digit = i < digits_len ? digits[i] : '0';
+                        if (!streamout_append_char(&cursor, end, (_TCHAR)(unsigned char)digit))
+                            break;
+                    }
+                }
+                if (i < decpt)
+                    break;
+                if ((precision > 0 || (flags & FLAG_SPECIAL)) && !streamout_append_char(&cursor, end, _T('.')))
+                    break;
+                for (i = 0; i < precision; ++i)
+                {
+                    int index = decpt + i;
+                    char digit = (index >= 0 && index < digits_len) ? digits[index] : '0';
+                    if (!streamout_append_char(&cursor, end, (_TCHAR)(unsigned char)digit))
+                        break;
+                }
+                if (i < precision)
+                    break;
+                while (cursor > local && cursor[-1] == _T('0') && !(flags & FLAG_SPECIAL))
+                    --cursor;
+                if (cursor > local && cursor[-1] == _T('.'))
+                    --cursor;
+            }
+            break;
         }
+
+        case _T('E'):
+            format_chr = _T('E');
+            /* There I intentionally fall through after normalizing the specifier. */
+        case _T('e'):
+            digits = _ecvt(fabs(value), precision + 1, &decpt, &sign);
+            if (!digits)
+                digits = "0";
+            if (!streamout_append_char(&cursor, end, (_TCHAR)(unsigned char)digits[0]))
+                break;
+            if ((precision > 0 || (flags & FLAG_SPECIAL)) && !streamout_append_char(&cursor, end, _T('.')))
+                break;
+            for (i = 1; i <= precision; ++i)
+            {
+                char digit = digits[i] ? digits[i] : '0';
+                if (!streamout_append_char(&cursor, end, (_TCHAR)(unsigned char)digit))
+                    break;
+            }
+            if (i <= precision)
+                break;
+            if (!streamout_append_char(&cursor, end, format_chr))
+                break;
+            decpt = decpt - 1;
+            if (!streamout_append_char(&cursor, end, decpt >= 0 ? _T('+') : _T('-')))
+                break;
+            decpt = abs(decpt);
+            if (decpt >= 100)
+            {
+                if (!streamout_append_char(&cursor, end, (_TCHAR)('0' + (decpt / 100) % 10)))
+                    break;
+            }
+            if (!streamout_append_char(&cursor, end, (_TCHAR)('0' + (decpt / 10) % 10)))
+                break;
+            if (!streamout_append_char(&cursor, end, (_TCHAR)('0' + decpt % 10)))
+                break;
+            break;
+
+        case _T('A'):
+        case _T('a'):
+            /* There I keep the old fallback behavior until hexadecimal floating point formatting is implemented. */
+        case _T('f'):
+        default:
+            digits = fcvtbuf(fabs(value), precision, &decpt, &sign, cvt_buffer);
+            if (!digits)
+                digits = "0";
+            digits_len = (int)strlen(digits);
+            i = 0;
+            if (decpt <= 0)
+            {
+                if (!streamout_append_char(&cursor, end, _T('0')))
+                    break;
+            }
+            else
+            {
+                for (i = 0; i < decpt; ++i)
+                {
+                    char digit = i < digits_len ? digits[i] : '0';
+                    if (!streamout_append_char(&cursor, end, (_TCHAR)(unsigned char)digit))
+                        break;
+                }
+            }
+            if (i < decpt)
+                break;
+            if ((precision > 0 || (flags & FLAG_SPECIAL)) && !streamout_append_char(&cursor, end, _T('.')))
+                break;
+            for (i = 0; i < precision; ++i)
+            {
+                int index = decpt + i;
+                char digit = (index >= 0 && index < digits_len) ? digits[index] : '0';
+                if (!streamout_append_char(&cursor, end, (_TCHAR)(unsigned char)digit))
+                    break;
+            }
+            break;
     }
 
-    if (precision > 0 || flags & FLAG_SPECIAL)
-        *--(*string) = _T('.');
-
-    /* Digits before the decimal point */
-    do
-    {
-        *--(*string) = digits[(unsigned __int64)fpval2 % base];
-        fpval2 /= base;
-    }
-    while ((unsigned __int64)fpval2);
-
+    *cursor = _T('\0');
+    output_len = (size_t)(cursor - local);
+    output = *string - output_len;
+    memcpy(output, local, (output_len + 1) * sizeof(_TCHAR));
+    *string = output;
 }
 #endif
 
@@ -325,8 +437,6 @@ int
 __cdecl
 streamout(FILE *stream, const _TCHAR *format, va_list argptr)
 {
-    static const _TCHAR digits_l[] = _T("0123456789abcdef0x");
-    static const _TCHAR digits_u[] = _T("0123456789ABCDEF0X");
     static const char *_nullstring = "(null)";
     _TCHAR buffer[BUFFER_SIZE + 1];
     _TCHAR chr, *string;

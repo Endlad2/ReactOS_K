@@ -17,15 +17,17 @@
 #include <stdlib.h>
 #include <limits.h>
 
-char *_ecvt(double value, int ndigits, int *decpt, int *sign);
-char *fcvtbuf(double arg, int ndigits, int *decpt, int *sign, char *buf);
-
 #ifdef _UNICODE
 # define streamout wstreamout
 # define format_float format_floatw
 #endif
 
-#ifndef MB_CUR_MAX
+#ifdef _LIBCNT_
+#ifdef MB_CUR_MAX
+#undef MB_CUR_MAX
+#endif
+#define MB_CUR_MAX 10
+#elif !defined(MB_CUR_MAX)
 #define MB_CUR_MAX 10
 #endif
 #define BUFFER_SIZE (2 * DBL_MAX_10_EXP + 32)
@@ -80,6 +82,128 @@ enum
 #define round(x) floor((x) + 0.5)
 
 #ifndef _USER32_WSPRINTF
+
+#define CVTBUFSIZE  (2 * DBL_MAX_10_EXP + 10)
+
+static char *
+streamout_cvt(double arg, int ndigits, int *decpt, int *sign, char *buf, int eflag)
+{
+    int r2;
+    double fi, fj;
+    char *p, *p1;
+
+    if (_isnan(arg))
+    {
+        strcpy(buf, "1.#QNAN");
+        *decpt = 0;
+        *sign = 0;
+        return buf;
+    }
+
+    if (!_finite(arg))
+    {
+        strcpy(buf, "1.#INF");
+        *decpt = 0;
+        *sign = 0;
+        return buf;
+    }
+
+    if (ndigits < 0)
+        ndigits = 0;
+    if (ndigits >= CVTBUFSIZE - 1)
+        ndigits = CVTBUFSIZE - 2;
+
+    r2 = 0;
+    *sign = 0;
+    p = &buf[0];
+    if (arg < 0)
+    {
+        *sign = 1;
+        arg = -arg;
+    }
+
+    arg = modf(arg, &fi);
+    p1 = &buf[CVTBUFSIZE];
+
+    if (fi != 0)
+    {
+        p1 = &buf[CVTBUFSIZE];
+        while (fi != 0)
+        {
+            fj = modf(fi / 10, &fi);
+            *--p1 = (int)((fj + .03) * 10) + '0';
+            r2++;
+        }
+        while (p1 < &buf[CVTBUFSIZE])
+            *p++ = *p1++;
+    }
+    else if (arg > 0)
+    {
+        while ((fj = arg * 10) < 1)
+        {
+            arg = fj;
+            r2--;
+        }
+    }
+
+    p1 = &buf[ndigits];
+    if (eflag == 0)
+        p1 += r2;
+    *decpt = r2;
+    if (p1 < &buf[0])
+    {
+        buf[0] = '\0';
+        return buf;
+    }
+
+    while (p <= p1 && p < &buf[CVTBUFSIZE])
+    {
+        arg *= 10;
+        arg = modf(arg, &fj);
+        *p++ = (int)fj + '0';
+    }
+
+    if (p1 >= &buf[CVTBUFSIZE])
+    {
+        buf[CVTBUFSIZE - 1] = '\0';
+        return buf;
+    }
+
+    p = p1;
+    *p1 += 5;
+    while (*p1 > '9')
+    {
+        *p1 = '0';
+        if (p1 > buf)
+            ++*--p1;
+        else
+        {
+            *p1 = '1';
+            (*decpt)++;
+            if (eflag == 0)
+            {
+                if (p > buf)
+                    *p = '0';
+                p++;
+            }
+        }
+    }
+
+    *p = '\0';
+    return buf;
+}
+
+static char *
+streamout_fcvtbuf(double arg, int ndigits, int *decpt, int *sign, char *buf)
+{
+    return streamout_cvt(arg, ndigits, decpt, sign, buf, 0);
+}
+
+static char *
+streamout_ecvtbuf(double arg, int ndigits, int *decpt, int *sign, char *buf)
+{
+    return streamout_cvt(arg, ndigits, decpt, sign, buf, 1);
+}
 
 static int
 streamout_append_char(_TCHAR **cursor, _TCHAR *end, _TCHAR chr)
@@ -166,7 +290,7 @@ format_float(
             int significant_digits;
 
             significant_digits = precision == 0 ? 1 : precision;
-            digits = _ecvt(fabs(value), significant_digits, &decpt, &sign);
+            digits = streamout_ecvtbuf(fabs(value), significant_digits, &decpt, &sign, cvt_buffer);
             if (!digits)
                 digits = "0";
 
@@ -178,7 +302,7 @@ format_float(
                 precision = significant_digits - 1;
                 if (precision < 0)
                     precision = 0;
-                digits = _ecvt(fabs(value), precision + 1, &decpt, &sign);
+                digits = streamout_ecvtbuf(fabs(value), precision + 1, &decpt, &sign, cvt_buffer);
                 if (!digits)
                     digits = "0";
                 if (!streamout_append_char(&cursor, end, (_TCHAR)(unsigned char)digits[0]))
@@ -217,7 +341,7 @@ format_float(
                 precision = significant_digits - decpt;
                 if (precision < 0)
                     precision = 0;
-                digits = fcvtbuf(fabs(value), precision, &decpt, &sign, cvt_buffer);
+                digits = streamout_fcvtbuf(fabs(value), precision, &decpt, &sign, cvt_buffer);
                 if (!digits)
                     digits = "0";
                 digits_len = (int)strlen(digits);
@@ -261,7 +385,7 @@ format_float(
             format_chr = _T('E');
             /* There I intentionally fall through after normalizing the specifier. */
         case _T('e'):
-            digits = _ecvt(fabs(value), precision + 1, &decpt, &sign);
+            digits = streamout_ecvtbuf(fabs(value), precision + 1, &decpt, &sign, cvt_buffer);
             if (!digits)
                 digits = "0";
             if (!streamout_append_char(&cursor, end, (_TCHAR)(unsigned char)digits[0]))
@@ -298,7 +422,7 @@ format_float(
             /* There I keep the old fallback behavior until hexadecimal floating point formatting is implemented. */
         case _T('f'):
         default:
-            digits = fcvtbuf(fabs(value), precision, &decpt, &sign, cvt_buffer);
+            digits = streamout_fcvtbuf(fabs(value), precision, &decpt, &sign, cvt_buffer);
             if (!digits)
                 digits = "0";
             digits_len = (int)strlen(digits);

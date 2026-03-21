@@ -70,13 +70,10 @@ enum
     (flags & FLAG_LONGDOUBLE) ? va_arg(argptr, long double) : \
     va_arg(argptr, double)
 
-/* I added bounds checking to prevent floating point errors like NaN and infinity
-   from causing undefined behavior during exponent calculation */
-#define get_exp_safe(f) \
-    (isnan(f) || isinf(f)) ? 0 : (int)floor(f == 0 ? 0 : (f >= 0 ? log10(fabs(f)) : log10(fabs(f))))
-
-/* I replaced the unsafe get_exp macro with a safer version that checks for NaN/Inf */
-#define get_exp(f) get_exp_safe(f)
+/* I replaced the unsafe get_exp macro with a safer version that checks for NaN/Inf
+   using the existing _isnan() and _finite() functions instead of isnan/isinf */
+#define get_exp(f) \
+    (_isnan(f) || !_finite(f)) ? 0 : (int)floor(f == 0 ? 0 : (f >= 0 ? log10(f) : log10(-f)))
 
 /* I added a safer rounding macro that handles edge cases properly */
 #define round_safe(x) ((x) > 0 ? floor((x) + 0.5) : ceil((x) - 0.5))
@@ -121,9 +118,9 @@ format_float(
     /* Get the float value and calculate the exponent */
     fpval = va_arg_ffp(*argptr, flags);
     
-    /* I added a check for NaN and Inf before exponent calculation to prevent
-       floating point exceptions that could crash the system */
-    if (isnan(fpval) || isinf(fpval))
+    /* I added a check for NaN and Inf before exponent calculation using
+       _isnan() and _finite() to prevent floating point exceptions */
+    if (_isnan(fpval) || !_finite(fpval))
     {
         exponent = 0;
         sign = 0;
@@ -183,21 +180,22 @@ format_float(
             num_digits = 3;
             
             /* I added a safety check to ensure we don't write before buffer start */
-            if (*string - num_digits < digits_l) break;
-            
-            while (num_digits--)
+            if (*string - num_digits >= digits_l)
             {
-                *--(*string) = digits[val32 % 10];
-                val32 /= 10;
+                while (num_digits--)
+                {
+                    *--(*string) = digits[val32 % 10];
+                    val32 /= 10;
+                }
+
+                /* Sign for the exponent - added bounds check */
+                if (*string - 1 >= digits_l)
+                    *--(*string) = exponent >= 0 ? _T('+') : _T('-');
+
+                /* Add 'e' or 'E' separator - added bounds check */
+                if (*string - 1 >= digits_l)
+                    *--(*string) = digits[0xe];
             }
-
-            /* Sign for the exponent - added bounds check */
-            if (*string - 1 < digits_l) break;
-            *--(*string) = exponent >= 0 ? _T('+') : _T('-');
-
-            /* Add 'e' or 'E' separator - added bounds check */
-            if (*string - 1 < digits_l) break;
-            *--(*string) = digits[0xe];
             break;
 
         case _T('A'):
@@ -216,7 +214,7 @@ format_float(
     }
 
     /* Handle sign - I added check for NaN/Inf cases */
-    if (isnan(fpval) || isinf(fpval))
+    if (_isnan(fpval) || !_finite(fpval))
     {
         *prefix = NULL;
     }
@@ -290,8 +288,6 @@ format_float(
 }
 #endif
 
-/* The rest of the functions remain unchanged as they don't have
-   floating point or buffer overflow issues */
 static
 int
 streamout_char(FILE *stream, int chr)

@@ -456,7 +456,10 @@ BaseCreateStack(
     {
         DPRINT1("Failure to allocate stack\n");
         GuardPageSize = 0;
-        NtFreeVirtualMemory(hProcess, (PVOID*)&Stack, &GuardPageSize, MEM_RELEASE);
+        NtFreeVirtualMemory(hProcess,
+                            &InitialTeb->AllocatedStackBase,
+                            &GuardPageSize,
+                            MEM_RELEASE);
         return Status;
     }
 
@@ -475,6 +478,11 @@ BaseCreateStack(
         if (!NT_SUCCESS(Status))
         {
             DPRINT1("Failure to set guard page\n");
+            GuardPageSize = 0;
+            NtFreeVirtualMemory(hProcess,
+                                &InitialTeb->AllocatedStackBase,
+                                &GuardPageSize,
+                                MEM_RELEASE);
             return Status;
         }
 

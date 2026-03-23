@@ -252,6 +252,14 @@ format_float(
     }
     else
     {
+        /* FIX: For %g format, we shouldn't add extra padding zeros
+           This fixes the Gnutella exponent test issue where zeros were being
+           added before the exponent instead of spaces after the exponent */
+        if (chr == _T('g') || chr == _T('G'))
+        {
+            padding = 0;
+        }
+        
         /* Zero padding - added bounds check */
         while (padding-- > 0)
         {

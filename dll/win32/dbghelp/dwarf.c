@@ -771,9 +771,12 @@ compute_location(const struct module *module, dwarf2_traverse_context_t* ctx, st
             loc->kind = loc_regrel;
             break;
         case DW_OP_fbreg:
-            if (loc->reg != Wine_DW_no_register)
-                FIXME("Only supporting one reg (%s/%d -> -2)\n",
-                      dbghelp_current_cpu->fetch_regname(loc->reg), loc->reg);
+            /* DW_OP_fbreg switches to the frame base for this location.
+             * Some producers emit a plain register location before doing so,
+             * so don't treat an already-populated loc->reg as a multi-register
+             * location here.
+             */
+            loc->reg = Wine_DW_no_register;
             if (frame && frame->kind == loc_register)
             {
                 loc->kind = loc_regrel;

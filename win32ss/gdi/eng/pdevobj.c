@@ -178,6 +178,7 @@ PDEVOBJ_bEnablePDEV(
 {
     PFN_DrvEnablePDEV pfnEnablePDEV;
     ULONG i;
+    NTSTATUS Status = STATUS_SUCCESS;
 
     /* Get the DrvEnablePDEV function */
     pfnEnablePDEV = ppdev->pfn.EnablePDEV;
@@ -191,21 +192,33 @@ PDEVOBJ_bEnablePDEV(
         ppdev->pGraphicsDevice ? pdevmode->dmDisplayFrequency : 0,
         ppdev,
         ppdev->pGraphicsDevice ? ppdev->pGraphicsDevice->szNtDeviceName : L"");
-    ppdev->dhpdev = pfnEnablePDEV(pdevmode,
-                                  pwszLogAddress,
-                                  HS_DDI_MAX,
-                                  ppdev->ahsurf,
-                                  sizeof(GDIINFO),
-                                  (PULONG)&ppdev->gdiinfo,
-                                  sizeof(DEVINFO),
-                                  &ppdev->devinfo,
-                                  (HDEV)ppdev,
-                                  ppdev->pGraphicsDevice ? ppdev->pGraphicsDevice->pwszDescription : NULL,
-                                  ppdev->pGraphicsDevice ? ppdev->pGraphicsDevice->DeviceObject : NULL);
+    _SEH2_TRY
+    {
+        ppdev->dhpdev = pfnEnablePDEV(pdevmode,
+                                      pwszLogAddress,
+                                      HS_DDI_MAX,
+                                      ppdev->ahsurf,
+                                      sizeof(GDIINFO),
+                                      (PULONG)&ppdev->gdiinfo,
+                                      sizeof(DEVINFO),
+                                      &ppdev->devinfo,
+                                      (HDEV)ppdev,
+                                      ppdev->pGraphicsDevice ? ppdev->pGraphicsDevice->pwszDescription : NULL,
+                                      ppdev->pGraphicsDevice ? ppdev->pGraphicsDevice->DeviceObject : NULL);
+    }
+    _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
+    {
+        Status = _SEH2_GetExceptionCode();
+        ppdev->dhpdev = NULL;
+    }
+    _SEH2_END;
     TRACE("DrvEnablePDEV(pdevmode %p hdev %p) => dhpdev %p\n", pdevmode, ppdev, ppdev->dhpdev);
     if (ppdev->dhpdev == NULL)
     {
-        ERR("Failed to enable PDEV\n");
+        if (!NT_SUCCESS(Status))
+            ERR("DrvEnablePDEV raised exception 0x%lx\n", Status);
+        else
+            ERR("Failed to enable PDEV\n");
         return FALSE;
     }
 
@@ -312,17 +325,30 @@ PDEVOBJ_pSurface(
     PPDEVOBJ ppdev)
 {
     HSURF hsurf;
+    NTSTATUS Status = STATUS_SUCCESS;
 
     /* Check if there is no surface for this PDEV yet */
     if (ppdev->pSurface == NULL)
     {
         /* Call the drivers DrvEnableSurface */
         TRACE("DrvEnableSurface(dhpdev %p)\n", ppdev->dhpdev);
-        hsurf = ppdev->pfn.EnableSurface(ppdev->dhpdev);
+        _SEH2_TRY
+        {
+            hsurf = ppdev->pfn.EnableSurface(ppdev->dhpdev);
+        }
+        _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
+        {
+            Status = _SEH2_GetExceptionCode();
+            hsurf = NULL;
+        }
+        _SEH2_END;
         TRACE("DrvEnableSurface(dhpdev %p) => hsurf %p\n", ppdev->dhpdev, hsurf);
         if (hsurf== NULL)
         {
-            ERR("Failed to create PDEV surface!\n");
+            if (!NT_SUCCESS(Status))
+                ERR("DrvEnableSurface raised exception 0x%lx\n", Status);
+            else
+                ERR("Failed to create PDEV surface!\n");
             return NULL;
         }
 

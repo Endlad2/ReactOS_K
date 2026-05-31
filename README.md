@@ -1,6 +1,6 @@
 <p align=center>
   <a href="https://kosm-os.world">
-    <img alt="KOSMOS" src="https://reactos.org/wiki/images/0/02/ReactOS_logo.png">
+    <img alt="KOSMOS" src="https://cdn.kosm-os.world/site_assets/logo.jpg">
   </a>
 </p>
 
@@ -63,22 +63,7 @@ kosmos-be build
 
 Or use GitHub Actions — builds happen automatically on each push.
 
-### Neptune translator
 
-KOSMOS uses its own language **Neptune**, which translates to C. This allows writing code in Python-like syntax with full C compatibility.
-
-Example code in Neptune:
-
-def main():
-    print("Hello from KOSMOS!")
-
-Convert Neptune → C:
-
-neptune n2c main.n -o main.c
-
-Convert entire project C → Neptune:
-
-neptune c2n -r .
 
 ### Bootable images
 
